@@ -8,6 +8,7 @@
   const runView = globalThis.tinyprobeRunView;
   const envFile = globalThis.tinyprobeEnvironmentFile;
   const requestHistory = globalThis.tinyprobeHistory;
+  const flows = globalThis.tinyprobeFlow;
 
   /** As in the extension: the last 50 calls, bodies cut at 64 KiB. */
   const HISTORY_SIZE = 50;
@@ -21,7 +22,10 @@
     selection: { kind: 'home' },
     outcomes: new Map(),
     variables: [],
-    history: []
+    history: [],
+    // The events of the last run of each workflow, to light its diagram up again; the diagram on screen.
+    runs: new Map(),
+    flow: null
   };
 
   // --- Helpers ---------------------------------------------------------------------------------------------
@@ -482,20 +486,77 @@
     const workflow = state.model.workflows.find(w => w.path === file);
     if (!workflow) return null;
     const steps = workflow.inspect.steps ?? [];
-    return h('div', null,
-      h('h1', null, workflow.name),
-      h('div', { class: 'where' }, file),
-      workflow.inspect.description ? h('p', { class: 'lead' }, workflow.inspect.description) : null,
-      h('div', { class: 'actions' }, h('button', { type: 'button', class: 'button primary', onclick: () => runWorkflow(workflow) }, '▶ Run')),
-      h('ol', { class: 'step-table' }, steps.map(step => h('li', null,
+    const mode = recall('workflow-view', 'diagram');
+    const toggle = next => { remember('workflow-view', next); renderView(); };
+
+    let content;
+    if (mode === 'diagram') {
+      const model = flows.flowModel(workflow.inspect, state.variables);
+      const details = h('div', { class: 'flow-details', 'aria-live': 'polite' });
+      const picture = h('div', { class: 'flow' });
+      const diagram = flows.createFlow(picture, model, { onSelect: at => showStep(workflow, steps[at], diagram, details) });
+      for (const event of state.runs.get(workflow.path) ?? []) diagram.apply(event);
+      state.flow = { path: workflow.path, diagram };
+      const inputs = model.inputs;
+      content = h('div', null,
+        inputs.environment.length + inputs.variables.length + inputs.other.length > 0 ? h('div', { class: 'flow-inputs' },
+          inputs.environment.length ? h('span', null, 'From the environment: ', inputs.environment.flatMap((n, i) => [h('code', null, n), i < inputs.environment.length - 1 ? ', ' : ''])) : null,
+          inputs.variables.length ? h('span', null, "From the workflow's variables: ", inputs.variables.flatMap((n, i) => [h('code', null, n), i < inputs.variables.length - 1 ? ', ' : ''])) : null,
+          inputs.other.length ? h('span', { class: 'error-text' }, 'Defined nowhere: ', inputs.other.flatMap((n, i) => [h('code', null, n), i < inputs.other.length - 1 ? ', ' : ''])) : null) : null,
+        picture,
+        details,
+        h('p', { class: 'aside' }, 'Each colored line is a value a step saves, down to the steps that use it. Click a step to see what it sends and checks.'));
+    } else {
+      state.flow = null;
+      content = h('ol', { class: 'step-table' }, steps.map(step => h('li', null,
         h('span', { class: 'step-number' }, step.index + 1),
         h('span', { class: 'step-label' }, step.name,
           step.sequence ? h('span', { class: 'step-kind' }, `  · from ${step.sequence.name || baseName(step.sequence.file)}`) : null,
           step.for_each ? h('span', { class: 'step-kind' }, '  · for each item') : null,
           step.until ? h('span', { class: 'step-kind' }, '  · until') : null),
         step.type === 'call' ? h('span', { class: 'verb' }, step.call ?? '') : h('span', { class: 'step-kind' }, step.type),
-        h('button', { type: 'button', class: 'button small', title: 'Run the workflow up to this step and show its response', onclick: () => runWorkflow(workflow, step.index + 1) }, 'Run to here')))),
-      h('p', { class: 'aside' }, 'Run to here runs the steps before it again each time: nothing is kept between runs.'));
+        h('button', { type: 'button', class: 'button small', title: 'Run the workflow up to this step and show its response', onclick: () => runWorkflow(workflow, step.index + 1) }, 'Run to here'))));
+    }
+
+    return h('div', null,
+      h('h1', null, workflow.name),
+      h('div', { class: 'where' }, file),
+      workflow.inspect.description ? h('p', { class: 'lead' }, workflow.inspect.description) : null,
+      h('div', { class: 'actions' },
+        h('button', { type: 'button', class: 'button primary', onclick: () => runWorkflow(workflow) }, '▶ Run'),
+        h('span', { class: 'spacer' }),
+        h('div', { class: 'segmented', role: 'group', 'aria-label': 'Show the steps as' },
+          h('button', { type: 'button', class: `button small${mode === 'diagram' ? ' active' : ''}`, 'aria-pressed': String(mode === 'diagram'), onclick: () => toggle('diagram') }, 'Diagram'),
+          h('button', { type: 'button', class: `button small${mode === 'list' ? ' active' : ''}`, 'aria-pressed': String(mode === 'list'), onclick: () => toggle('list') }, 'List'))),
+      content,
+      mode === 'list' ? h('p', { class: 'aside' }, 'Run to here runs the steps before it again each time: nothing is kept between runs.') : null);
+  }
+
+  /** What a step of the diagram sends, checks and saves, with its result in the last run. */
+  function showStep(workflow, step, diagram, details) {
+    if (!step) return details.replaceChildren();
+    const result = diagram.state(diagram.selected)?.result;
+    const checks = [...(step.expect?.checks ?? [])];
+    const withValues = Object.entries(step.with ?? {});
+    const saves = Object.entries(step.save ?? {});
+    details.replaceChildren(h('div', { class: 'panel' },
+      h('div', { class: 'panel-head' },
+        h('span', { class: 'what' }, `${step.index + 1}. ${step.name}`),
+        h('button', { type: 'button', class: 'button small', onclick: () => runWorkflow(workflow, step.index + 1) }, 'Run to here')),
+      h('div', { class: 'panel-body' },
+        step.type === 'call' ? h('div', { class: 'mono' }, `call ${step.call}`) : h('div', { class: 'mono' }, step.type),
+        step.sequence ? h('div', { class: 'aside' }, `From the sequence ${step.sequence.name || baseName(step.sequence.file)}.`) : null,
+        withValues.length ? h('div', null, h('h2', null, 'Sends'), h('ul', { class: 'plain' }, withValues.map(([k, v]) => h('li', { class: 'mono' }, `${k}: ${JSON.stringify(v)}`)))) : null,
+        step.expect && (step.expect.status?.length || checks.length) ? h('div', null, h('h2', null, 'Checks'),
+          h('ul', { class: 'plain' },
+            step.expect.status?.length ? h('li', { class: 'mono' }, `status ${step.expect.status.join(' or ')}`) : null,
+            checks.map(c => h('li', { class: 'mono' }, `${c.subject} ${c.condition}`)))) : null,
+        step.until ? h('div', { class: 'aside' }, `Repeated every ${step.until.every_ms} ms, up to ${step.until.timeout_ms} ms, until its checks pass.`) : null,
+        step.for_each ? h('div', { class: 'aside' }, 'Called once per item of its for_each.') : null,
+        saves.length ? h('div', null, h('h2', null, 'Saves'), h('ul', { class: 'plain' }, saves.map(([k, v]) => h('li', { class: 'mono' }, `${k} ← ${v}`)))) : null,
+        result ? h('div', null, h('h2', null, 'Last run'),
+          h('div', { class: result.success ? '' : 'error-text' }, `${result.success ? 'Passed' : 'Failed'} · status ${result.status ?? 'none'} · ${runView.formatDuration(result.duration_ms)}${result.failure ? ` · ${result.failure}` : ''}`),
+          h('div', { class: 'aside' }, 'Its request and response are in the result below.')) : null)));
   }
 
   function sequenceView({ file }) {
@@ -922,10 +983,15 @@
     const view = runView.create(body);
     view.reset(workflow.name, state.environment);
     let events = 0;
+    const recorded = [];
+    state.runs.set(workflow.path, recorded);
     try {
       const exit = await stream('/api/run', { root: state.root, files: [workflow.path], to: to ?? null, env: state.environment }, event => {
         events++;
         view.apply(event);
+        // The diagram lights up as the run goes, and again when the workflow is opened later.
+        recorded.push(event);
+        if (state.flow?.path === workflow.path) state.flow.diagram.apply(event);
         if (event.event === 'run_finished' && !to) {
           state.outcomes.set(workflow.path, event.success);
           renderSidebar();

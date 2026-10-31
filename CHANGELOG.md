@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **The diagram of a workflow**: its steps in order, the steps of a sequence grouped under its name, `until` and `for_each` marked, and a colored line for each saved value from the step that saves it to the steps that use it. What comes from the environment or the workflow's variables is listed above, and a value defined nowhere is shown in red. It lights up as the workflow runs (the item of a `for_each`, the attempt of an `until`), and again when the workflow is opened later. Click a step for what it sends, checks and saves, and its last result. **List** shows the steps as before.
+
 ## 0.2.0
 
 - **Environment**: the variables of the selected env file, edited in place. A change rewrites only that variable's lines, so comments and order stay; names that look like secrets are hidden until shown. Block values (on several lines) are edited in the file.

@@ -16,6 +16,9 @@ internal sealed class TinyprobeCli(AppPaths paths)
     /// <summary>The oldest tinyprobe this app works with: `matches` and `schema` are in its forms and results.</summary>
     public const string Minimum = "0.20.0";
 
+    /// <summary>The first tinyprobe with `inspect --source`, which the visual editor reads files with.</summary>
+    public const string Editing = "0.21.0";
+
     private const string Releases = "https://github.com/kikutano/tinyprobe/releases/latest/download";
 
     private readonly object _lock = new();

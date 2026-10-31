@@ -7,7 +7,7 @@
     <RootNamespace>Tinyprobe.App</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <VersionPrefix>0.2.0</VersionPrefix>
+    <VersionPrefix>0.3.0</VersionPrefix>
 
     <!-- One small native file: no runtime to install, and a start in milliseconds. -->
     <PublishAot>true</PublishAot>

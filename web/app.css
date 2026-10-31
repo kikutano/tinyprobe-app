@@ -304,3 +304,11 @@ code, .mono { font-family: var(--mono); font-size: 0.92em; }
 .flow-details h2 { margin: 12px 0 4px; font-size: 0.95em; }
 .plain { list-style: none; margin: 0; padding: 0; }
 .plain li { padding: 1px 0; overflow-wrap: anywhere; }
+
+/* --- Visual editor ------------------------------------------------------------------------------------- */
+
+.title-row .spacer { flex: 1; }
+.title-actions { display: flex; gap: 6px; }
+.check-row { grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr) minmax(0, 1fr) auto; }
+label.check { display: block; padding: 2px 0; font-family: var(--mono); font-size: 0.92em; }
+.step-table .icon-button:disabled { opacity: 0.35; cursor: default; }

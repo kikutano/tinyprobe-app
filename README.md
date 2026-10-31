@@ -12,7 +12,23 @@ Call your API and run your tests from the browser, with no terminal and no edito
 - **Your files, not a copy.** The app works on the YAML files of your folder. What you create here runs unchanged with `tinyprobe run` in a terminal and in CI, and what your team writes in an editor shows up here.
 - **The same engine as CI.** Every request and every check is done by the `tinyprobe` program, so a workflow that passes here passes in your pipeline.
 
-## Download and start
+## Install
+
+**Linux and macOS**, in a terminal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kikutano/tinyprobe-app/main/install.sh | sh
+```
+
+**Windows**, in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/kikutano/tinyprobe-app/main/install.ps1 | iex
+```
+
+One command does everything: it downloads the app, checks it against the release's checksums, adds the **tinyprobe** icon (Start menu and desktop on Windows, Applications on macOS, the applications menu on Linux), and downloads `tinyprobe` too if you do not have 0.20.0 or newer. Then start tinyprobe from its icon: a small window says the app is running, and the app opens in your browser. **Closing that window stops the app.** Run the same command again to update it.
+
+### Or download it
 
 1. Download the file for your computer from the [latest release](https://github.com/kikutano/tinyprobe-app/releases/latest):
 
@@ -22,10 +38,9 @@ Call your API and run your tests from the browser, with no terminal and no edito
    | Mac with Apple silicon | `tinyprobe-app-osx-arm64.tar.gz` |
    | Linux | `tinyprobe-app-linux-x64.tar.gz` (`linux-arm64` for ARM, `linux-musl-*` for Alpine) |
 
-2. Unpack it and double-click `tinyprobe-app`. A small window opens and says the app is running, and the app opens in your browser. **Closing that window stops the app.**
-3. The first time, the page offers to download `tinyprobe` (about 4 MB, checked against its checksum) and to add a tinyprobe icon to your Start menu, Applications or applications menu. After that, start it from the icon.
+2. Unpack it and double-click `tinyprobe-app`. The first time, the page offers to download `tinyprobe` (about 4 MB, checked against its checksum) and to add the tinyprobe icon. After that, start it from the icon.
 
-The app is not signed yet, so the first start shows a warning:
+The app is not signed yet, so a downloaded file shows a warning at its first start (the install command above avoids it):
 
 - **Windows**: "Windows protected your PC". Click **More info**, then **Run anyway**.
 - **macOS**: "cannot be opened because the developer cannot be verified". Open **System Settings → Privacy & Security** and click **Open Anyway** next to tinyprobe-app, or right-click the file and choose **Open**.
@@ -66,9 +81,10 @@ The app's settings are in `%LOCALAPPDATA%\tinyprobe-app` on Windows, `~/Library/
 
 ```text
 tinyprobe-app [folder] [--port <n>] [--no-open]
+tinyprobe-app --install
 ```
 
-`folder` opens that folder; `--port` picks the port on `127.0.0.1` (the default is the last one used, first 4747); `--no-open` prints the link instead of opening the browser.
+`folder` opens that folder; `--port` picks the port on `127.0.0.1` (the default is the last one used, first 4747); `--no-open` prints the link instead of opening the browser. `--install` is what the install commands run: it copies the app to its folder, adds the icon and downloads tinyprobe if needed. On Linux and macOS the install command also links `tinyprobe-app` in `~/.local/bin`.
 
 ## How it is built
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1
+
+- **Install with one command**: `curl -fsSL https://raw.githubusercontent.com/kikutano/tinyprobe-app/main/install.sh | sh` on Linux and macOS, `irm https://raw.githubusercontent.com/kikutano/tinyprobe-app/main/install.ps1 | iex` on Windows. The app is checked against the release's checksums, the tinyprobe icon is added, and tinyprobe is downloaded if it is missing; no warning for an unsigned app. Run it again to update.
+- `tinyprobe-app --install`, the step the installers run: copy the app to its folder, add the icon, download tinyprobe if needed.
+
 ## 0.1.0
 
 The first version (tinyprobe spec 0017, roadmap M5-1).

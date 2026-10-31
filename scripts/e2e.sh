@@ -120,4 +120,12 @@ LAUNCHER=""
 [ ! -f "$WORK/data/instance.json" ] || fail "instance.json was left behind"
 ok "it stops on SIGTERM and removes instance.json"
 
+echo "Install"
+mkdir -p "$WORK/xdg"
+XDG_DATA_HOME="$WORK/xdg" TINYPROBE_APP_DATA="$WORK/installed" TINYPROBE_PATH="$TINYPROBE" "$APP" --install > "$WORK/install.txt" 2>&1 || fail "--install: $(cat "$WORK/install.txt")"
+[ -x "$WORK/installed/app/tinyprobe-app" ] || fail "--install did not copy the app"
+grep -q "^Exec=\"$WORK/installed/app/tinyprobe-app\"$" "$WORK/xdg/applications/tinyprobe-app.desktop" || fail "--install did not add the menu entry"
+grep -q '"shortcut":"created"' "$WORK/installed/config.json" || fail "--install did not record the icon"
+ok "--install copies the app, adds the menu entry and records it"
+
 echo "All end-to-end checks passed."

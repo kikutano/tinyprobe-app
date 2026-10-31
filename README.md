@@ -8,6 +8,11 @@ Call your API and run your tests from the browser, with no terminal and no edito
   <img src="media/screen.png" alt="tinyprobe-app showing a workflow as a diagram after a run: twelve steps in order, the log-in sequence grouped, each step with its status and time, an orange line carrying the token saved by the log-in step down to every step that uses it, and a blue line carrying the id of the created user to the steps that update, read and delete it" width="900">
 </p>
 
+<p align="center">
+  <img src="media/flow-run.gif" alt="A workflow's diagram lighting up as it runs: each step turns green in turn, the items of a for_each step count up to 3 of 3, and the lines carry the token and the list of users to the steps that use them" width="51%">
+  <img src="media/flow-until.gif" alt="A workflow that waits for a report: the step with until counts its attempts while it polls, then turns green, and the line carries the report id from the step that started it" width="47%">
+</p>
+
 - **One small download.** A 3.5 MB program for Windows, macOS or Linux, with nothing else to install: no account, no cloud, no Node, no .NET.
 - **Your files, not a copy.** The app works on the YAML files of your folder. What you create here runs unchanged with `tinyprobe run` in a terminal and in CI, and what your team writes in an editor shows up here.
 - **The same engine as CI.** Every request and every check is done by the `tinyprobe` program, so a workflow that passes here passes in your pipeline.

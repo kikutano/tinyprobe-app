@@ -89,6 +89,7 @@ internal sealed class Api
             case ("POST", "/api/folders/remove"): await RemoveFolder(request, response); break;
             case ("GET", "/api/folder"): await Folder(request, response, gone); break;
             case ("GET", "/api/file"): await ReadFile(request, response); break;
+            case ("GET", "/api/source"): await Source(request, response, gone); break;
             case ("POST", "/api/save"): await Save(request, response, gone); break;
             case ("POST", "/api/environment"): await WriteEnvironment(request, response, gone); break;
             case ("GET", "/api/history"): await ReadHistory(request, response); break;
@@ -181,6 +182,8 @@ internal sealed class Api
             w.WriteNull("tinyprobe");
         }
         w.WriteString("problem", _cli.Problem);
+        // The visual editor reads files with `inspect --source`, from tinyprobe 0.21.0 (spec 0018).
+        w.WriteBoolean("editing", _cli.Current is { } editor && (editor.Source == "env" || TinyprobeCli.AtLeast(editor.Version, TinyprobeCli.Editing)));
         w.WriteString("icon", Desktop.CanAddIcon ? _config.Shortcut : "unsupported");
         w.WriteStartArray("folders");
         foreach (var folder in _config.Folders)
@@ -423,6 +426,32 @@ internal sealed class Api
         {
             w.WriteStartObject();
             w.WriteBoolean("saved", saved);
+            Json.WriteRaw(w, "inspect", output);
+            w.WriteEndObject();
+        }));
+    }
+
+    /// <summary>
+    /// A file as written and where its blocks are, for the visual editor: `inspect --json --source` as tinyprobe
+    /// writes it, with the text it was read from, so the page edits exactly what tinyprobe saw.
+    /// </summary>
+    private async Task Source(HttpRequest request, HttpResponse response, CancellationToken gone)
+    {
+        if (await RootOf(request.Query.GetValueOrDefault("root"), response) is not { } root) return;
+        var relative = request.Query.GetValueOrDefault("path");
+        if (await FileOf(root, relative, response) is not { } file) return;
+        if (await Cli(response) is not { } cli) return;
+        var text = File.Exists(file) ? await File.ReadAllTextAsync(file, gone) : null;
+        var (_, output, error) = await TinyprobeCli.Run(cli.Path, ["inspect", relative!, "--json", "--source"], root, gone);
+        if (text is null || !output.TrimStart().StartsWith('{'))
+        {
+            await response.Json(409, Json.Error(text is null ? "The file does not exist." : $"tinyprobe {TinyprobeCli.Editing} or newer is needed to edit files: {error.Trim()}"));
+            return;
+        }
+        await response.Json(200, Json.Write(w =>
+        {
+            w.WriteStartObject();
+            w.WriteString("text", text);
             Json.WriteRaw(w, "inspect", output);
             w.WriteEndObject();
         }));

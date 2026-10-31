@@ -117,6 +117,17 @@ post /api/history "{\"root\":\"$ROOT\",\"entries\":[{\"endpoint\":\"status\",\"s
 curl -s -b "$JAR" "$BASE/api/history?root=$(q "$ROOT")" | json "d[0]['endpoint']" | grep -q '^status$' || fail "history read"
 ok "an environment variable is added; the history is kept for the folder"
 
+echo "Visual editor"
+if "$TINYPROBE" --help | grep -q -- '--source'; then
+  SOURCE=$(curl -s -b "$JAR" "$BASE/api/source?root=$(q "$ROOT")&path=example%2Fapi%2Ftestserver.yaml")
+  echo "$SOURCE" | json "d['inspect']['source']['endpoints']['status']['path'], len([b for b in d['inspect']['blocks'] if b['kind'] == 'endpoint']) == len(d['inspect']['source']['endpoints']), d['text'].startswith(open('$ROOT/example/api/testserver.yaml').read()[:20])" \
+    | grep -q '/api/status/${code} True True' || fail "source: $(echo "$SOURCE" | head -c 300)"
+  ok "a file as written, with its blocks, for the forms"
+else
+  [ "$(code -b "$JAR" "$BASE/api/source?root=$(q "$ROOT")&path=example%2Fapi%2Ftestserver.yaml")" = 409 ] || fail "source without --source"
+  ok "editing says it needs tinyprobe 0.21.0 ($("$TINYPROBE" --version) has no --source)"
+fi
+
 echo "Second start"
 TINYPROBE_APP_DATA="$WORK/data" "$APP" --no-open > "$WORK/second.txt" 2>&1 || fail "the second start failed"
 grep -q "already running: $BASE/open?t=" "$WORK/second.txt" || fail "the second start did not hand over: $(cat "$WORK/second.txt")"

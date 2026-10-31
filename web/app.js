@@ -9,6 +9,7 @@
   const envFile = globalThis.tinyprobeEnvironmentFile;
   const requestHistory = globalThis.tinyprobeHistory;
   const flows = globalThis.tinyprobeFlow;
+  const editing = globalThis.tinyprobeEditor;
 
   /** As in the extension: the last 50 calls, bodies cut at 64 KiB. */
   const HISTORY_SIZE = 50;
@@ -261,12 +262,15 @@
           onclick: () => select({ kind: 'endpoint', file: file.path, name: endpoint.name })
         })));
       }
+      if (state.info.editing && !file.workflow) {
+        tree.append(h('li', null, item({ mark: '🔑', label: 'Auth sets', selected: isSelected('auth', file.path), onclick: () => select({ kind: 'auth', file: file.path }) })));
+      }
     }
     tree.append(h('li', null, item({ label: '+ New request', className: 'add', selected: selected.kind === 'new', onclick: () => select({ kind: 'new' }) })));
     apiGroup.append(tree);
     groups.push(apiGroup);
 
-    if (m.workflows.length > 0) {
+    if (m.workflows.length > 0 || state.info.editing) {
       const list = h('ul', { class: 'tree' });
       for (const workflow of m.workflows) {
         const outcome = state.outcomes.get(workflow.path);
@@ -279,6 +283,7 @@
           onclick: () => select({ kind: 'workflow', file: workflow.path })
         })));
       }
+      if (state.info.editing) list.append(h('li', null, item({ label: '+ New workflow', className: 'add', selected: selected.kind === 'new-workflow', onclick: () => select({ kind: 'new-workflow' }) })));
       groups.push(h('div', { class: 'group' }, h('div', { class: 'group-title' }, h('span', null, 'Workflows')), list));
     }
 
@@ -335,6 +340,11 @@
       s.kind === 'sequence' ? sequenceView(s) :
       s.kind === 'new' ? newRequestView() :
       s.kind === 'environment' ? environmentView() :
+      s.kind === 'edit-endpoint' ? endpointEditView(s) :
+      s.kind === 'yaml' ? yamlView(s) :
+      s.kind === 'auth' ? authView(s) :
+      s.kind === 'edit-step' ? stepEditView(s) :
+      s.kind === 'new-workflow' ? newWorkflowView() :
       s.kind === 'history' ? historyView() :
       homeView();
     view.replaceChildren(content ?? homeView());
@@ -474,7 +484,12 @@
         h('span', { class: 'aside' }, 'Values are read like YAML: 42 is a number, true a boolean, "42" a string.')));
 
     return h('div', null,
-      h('div', { class: 'title-row' }, h('span', { class: `verb verb-${endpoint.method}` }, endpoint.method), h('h1', null, endpoint.name)),
+      h('div', { class: 'title-row' }, h('span', { class: `verb verb-${endpoint.method}` }, endpoint.method), h('h1', null, endpoint.name),
+        state.info.editing ? h('span', { class: 'spacer' }) : null,
+        state.info.editing ? h('div', { class: 'title-actions' },
+          h('button', { type: 'button', class: 'button small', onclick: () => select({ kind: 'edit-endpoint', file, name }) }, 'Edit'),
+          h('button', { type: 'button', class: 'button small', onclick: () => select({ kind: 'yaml', file, block: { kind: 'endpoint', name }, back: { kind: 'endpoint', file, name } }) }, 'YAML'),
+          h('button', { type: 'button', class: 'button small', onclick: () => deleteBlock(file, 'endpoint', name, `the endpoint ${name}`, () => select({ kind: 'home' })) }, 'Delete')) : null),
       h('div', { class: 'where' }, `${file}:${endpoint.location?.line ?? ''}`),
       h('div', { class: 'path' }, `${endpoint.base_url ?? ''}${endpoint.path}`),
       form);
@@ -490,7 +505,10 @@
     const toggle = next => { remember('workflow-view', next); renderView(); };
 
     let content;
-    if (mode === 'diagram') {
+    if (mode === 'edit' && state.info.editing) {
+      state.flow = null;
+      content = stepsEditor(workflow);
+    } else if (mode === 'diagram') {
       const model = flows.flowModel(workflow.inspect, state.variables);
       const details = h('div', { class: 'flow-details', 'aria-live': 'polite' });
       const picture = h('div', { class: 'flow' });
@@ -527,7 +545,8 @@
         h('span', { class: 'spacer' }),
         h('div', { class: 'segmented', role: 'group', 'aria-label': 'Show the steps as' },
           h('button', { type: 'button', class: `button small${mode === 'diagram' ? ' active' : ''}`, 'aria-pressed': String(mode === 'diagram'), onclick: () => toggle('diagram') }, 'Diagram'),
-          h('button', { type: 'button', class: `button small${mode === 'list' ? ' active' : ''}`, 'aria-pressed': String(mode === 'list'), onclick: () => toggle('list') }, 'List'))),
+          h('button', { type: 'button', class: `button small${mode === 'list' ? ' active' : ''}`, 'aria-pressed': String(mode === 'list'), onclick: () => toggle('list') }, 'List'),
+          state.info.editing ? h('button', { type: 'button', class: `button small${mode === 'edit' ? ' active' : ''}`, 'aria-pressed': String(mode === 'edit'), onclick: () => toggle('edit') }, 'Edit') : null)),
       content,
       mode === 'list' ? h('p', { class: 'aside' }, 'Run to here runs the steps before it again each time: nothing is kept between runs.') : null);
   }
@@ -577,18 +596,24 @@
 
   // --- New request -----------------------------------------------------------------------------------------
 
-  function newRequestView() {
+  /**
+   * The form of an endpoint: a new one, or, with `edit` ({ file, name, block, text, form }), an existing one,
+   * whose block is replaced when saved (tinyprobe spec 0018).
+   */
+  function newRequestView(edit = null) {
     const apiFiles = state.model.apis.filter(a => !a.workflow);
-    const draft = recall(`draft:${state.root}`, {});
+    const draft = edit ? { file: edit.file, ...edit.form } : recall(`draft:${state.root}`, {});
+    const keep = values => { if (!edit) remember(`draft:${state.root}`, values); };
     const status = h('div', { 'aria-live': 'polite' });
     const control = (tag, attributes, ...children) => h(tag, { class: tag === 'select' ? 'select' : tag === 'textarea' ? 'textarea' : 'input', ...attributes }, ...children);
 
-    const fileSelect = control('select', { id: 'new-file' },
+    const fileSelect = control('select', { id: 'new-file', disabled: Boolean(edit) },
       apiFiles.map(a => h('option', { value: a.path, selected: draft.file === a.path }, a.path)),
       h('option', { value: '', selected: apiFiles.length === 0 || draft.file === '' }, 'A new API file…'));
     const newName = control('input', { id: 'new-api-name', placeholder: 'shop', value: draft.apiName ?? '' });
     const baseUrl = control('input', { id: 'new-base-url', class: 'input mono', placeholder: 'https://api.example.com or ${baseUrl}', value: draft.baseUrl ?? '' });
-    const name = control('input', { id: 'new-name', class: 'input mono', placeholder: 'get_user', value: draft.name ?? '', autocomplete: 'off', spellcheck: 'false' });
+    // Renaming would break the workflows that call it: an endpoint keeps its name here.
+    const name = control('input', { id: 'new-name', class: 'input mono', placeholder: 'get_user', value: draft.name ?? '', autocomplete: 'off', spellcheck: 'false', readonly: Boolean(edit) });
     const method = control('select', { id: 'new-method' }, ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].map(m => h('option', { value: m, selected: (draft.method ?? 'GET') === m }, m)));
     const path = control('input', { id: 'new-path', class: 'input mono', placeholder: '/users/${id}', value: draft.path ?? '', spellcheck: 'false' });
     const auth = control('select', { id: 'new-auth' }, h('option', { value: '' }, 'None'));
@@ -616,8 +641,8 @@
       existingNames = [];
       auth.replaceChildren(h('option', { value: '' }, 'None'));
       if (chosen) {
-        fileText = await text(`/api/file?${query({ root: state.root, path: chosen })}`).catch(() => null);
-        existingNames = apiFiles.find(a => a.path === chosen)?.endpoints.map(e => e.name) ?? [];
+        fileText = edit ? edit.text : await text(`/api/file?${query({ root: state.root, path: chosen })}`).catch(() => null);
+        existingNames = (apiFiles.find(a => a.path === chosen)?.endpoints.map(e => e.name) ?? []).filter(n => n !== edit?.name);
         for (const set of core.childKeys(fileText ?? '', 'auth')) auth.append(h('option', { value: set, selected: draft.auth === set }, set));
       }
     }
@@ -640,7 +665,7 @@
 
     function changed() {
       const values = collect();
-      remember(`draft:${state.root}`, values);
+      keep(values);
       // The values a call can pass: every ${name} written in the request. A default makes it optional.
       const found = core.placeholders(values.path, values.body, ...values.headers.map(x => x.value), ...values.query.split(',').map(x => x.trim() ? `\${${x.trim()}}` : ''));
       const current = new Map([...defaultRows.children].map(row => [row.dataset.name, row.querySelector('input').value]));
@@ -648,7 +673,7 @@
       defaultRows.replaceChildren(...found.map(argument => {
         const row = h('div', { class: 'row', 'data-name': argument },
           h('label', { class: 'mono', for: `default-${argument}` }, argument),
-          h('input', { class: 'input mono', id: `default-${argument}`, placeholder: 'no default: from the call or the environment', value: current.get(argument) ?? remembered.get(argument) ?? '', oninput: () => remember(`draft:${state.root}`, collect()) }),
+          h('input', { class: 'input mono', id: `default-${argument}`, placeholder: 'no default: from the call or the environment', value: current.get(argument) ?? remembered.get(argument) ?? '', oninput: () => keep(collect()) }),
           h('span'));
         return row;
       }));
@@ -675,7 +700,13 @@
       };
       let target = values.file;
       let result;
-      if (target) {
+      if (edit) {
+        try {
+          result = { text: editing.replaceBlock(fileText, edit.block, core.endpointYaml(request, editing.indentOf(edit.block))) };
+        } catch (e) {
+          result = { error: e.message };
+        }
+      } else if (target) {
         result = core.addEndpoint(fileText ?? '', request);
       } else {
         target = core.apiFileName(values.apiName);
@@ -694,13 +725,15 @@
             h('ul', null, (answer.inspect?.errors ?? []).map(e => h('li', null, e.text)))));
           return;
         }
-        remember(`draft:${state.root}`, {});
+        if (!edit) remember(`draft:${state.root}`, {});
         await loadListing();
         select({ kind: 'endpoint', file: target, name: values.name });
         showMessage(`Saved ${values.name} in ${target}.`, 'info');
       } catch (e) {
         if (e instanceof RestartError) return;
-        if (e.status === 409) {
+        if (e.status === 409 && edit) {
+          status.append(h('div', { class: 'notice' }, 'The file changed on disk since it was read: open the endpoint again to edit what is there now.'));
+        } else if (e.status === 409) {
           await fileChanged();
           status.append(h('div', { class: 'notice' }, 'The file changed on disk since it was read: it is read again now. Save again.'));
         } else {
@@ -724,7 +757,9 @@
         h('label', null, 'Headers'), h('div', null, headerRows, h('button', { type: 'button', class: 'button small', onclick: () => { addHeader(); } }, '+ Header')),
         h('label', { for: 'new-body' }, 'JSON body'), body,
         h('label', null, 'Defaults'), defaultRows),
-      h('div', { class: 'actions' }, save, h('span', { class: 'aside' }, 'The request is added to the YAML file, which tinyprobe checks before it is kept.')),
+      h('div', { class: 'actions' }, save,
+        edit ? h('button', { type: 'button', class: 'button', onclick: () => select({ kind: 'endpoint', file: edit.file, name: edit.name }) }, 'Cancel') : null,
+        h('span', { class: 'aside' }, edit ? 'Only this endpoint is rewritten; tinyprobe checks the file before it is kept.' : 'The request is added to the YAML file, which tinyprobe checks before it is kept.')),
       status);
 
     queueMicrotask(async () => {
@@ -733,9 +768,391 @@
     });
 
     return h('div', null,
-      h('h1', null, 'New request'),
-      h('p', { class: 'lead' }, 'An endpoint of an API file: a request you can send from here, call from a workflow and run in CI.'),
+      h('h1', null, edit ? `Edit ${edit.name}` : 'New request'),
+      h('p', { class: 'lead' }, edit ? edit.file : 'An endpoint of an API file: a request you can send from here, call from a workflow and run in CI.'),
+      edit?.comments ? h('div', { class: 'notice info' }, 'The comments inside this endpoint are not kept when it is saved from the form; those around it are. Use Edit as YAML to keep them.') : null,
       form);
+  }
+
+  // --- Visual editor (M5-4) ----------------------------------------------------------------------------------
+  //
+  // Every form reads the file with `inspect --source` (tinyprobe spec 0018), rewrites one block of its text, and
+  // saves it through /api/save, where tinyprobe checks it: a change it does not accept leaves the file as it was.
+
+  const EDITING_NEEDED = 'Editing files needs tinyprobe 0.21.0 or newer: update it from Settings, or with tinyprobe update.';
+
+  function blockOf(source, kind, key) {
+    return (source.inspect?.blocks ?? []).find(b => b.kind === kind && (kind === 'step' ? b.index === key : b.name === key)) ?? null;
+  }
+
+  /** A view that first reads a file as written, then shows what `build` makes of it. */
+  function editorShell(title, file, build) {
+    const container = h('div', null, h('p', { class: 'aside' }, 'Reading the file…'));
+    queueMicrotask(async () => {
+      try {
+        const source = await api(`/api/source?${query({ root: state.root, path: file })}`);
+        container.replaceChildren(build(source));
+      } catch (e) {
+        if (!(e instanceof RestartError)) container.replaceChildren(h('div', { class: 'notice' }, e.message));
+      }
+    });
+    return title === null ? container : h('div', null, h('h1', null, title), h('div', { class: 'where' }, file), container);
+  }
+
+  /** Saves a changed file; returns whether tinyprobe accepted it, and says why not in `status`. */
+  async function saveFile(file, next, basis, status) {
+    status.replaceChildren();
+    try {
+      const answer = await api('/api/save', { root: state.root, path: file, text: next, basis });
+      if (!answer.saved) {
+        status.append(h('div', { class: 'notice' },
+          h('strong', null, 'Not saved: tinyprobe does not accept the file with this change. The file is as it was.'),
+          h('ul', null, (answer.inspect?.errors ?? []).map(e => h('li', null, e.text)))));
+        return false;
+      }
+      await loadListing();
+      return true;
+    } catch (e) {
+      if (!(e instanceof RestartError)) {
+        status.append(h('div', { class: 'notice' }, e.status === 409 ? 'The file changed on disk since it was read: open it again to edit what is there now.' : e.message));
+      }
+      return false;
+    }
+  }
+
+  const control = (tag, attributes, ...children) => h(tag, { class: tag === 'select' ? 'select' : tag === 'textarea' ? 'textarea' : 'input mono', autocomplete: 'off', spellcheck: 'false', ...attributes }, ...children);
+
+  /** What only YAML can say: the form stops there and offers the block as text. */
+  function yamlOnly(what, file, block, back) {
+    return h('div', null,
+      h('div', { class: 'notice info' }, `This ${what} has ${block.reasons.join(', ')}: the form does not show ${block.reasons.length === 1 ? 'it' : 'them'}, so it is edited as YAML.`),
+      h('div', { class: 'actions' },
+        h('button', { type: 'button', class: 'button primary', onclick: () => select({ kind: 'yaml', file, block: block.key, back }) }, 'Edit as YAML'),
+        h('button', { type: 'button', class: 'button', onclick: () => select(back) }, 'Cancel')));
+  }
+
+  function endpointEditView({ file, name }) {
+    return editorShell(null, file, source => {
+      const block = blockOf(source, 'endpoint', name);
+      const written = source.inspect?.source?.endpoints?.[name];
+      if (!block || !written) return h('div', { class: 'notice' }, `${name} is not written in ${file}.`);
+      const form = editing.requestFromSource(name, written);
+      const reasons = form.unsupported ?? (String(form.auth).includes(',') ? ['several auth sets'] : null);
+      const back = { kind: 'endpoint', file, name };
+      if (reasons) return h('div', null, h('h1', null, `Edit ${name}`), yamlOnly('endpoint', file, { reasons, key: { kind: 'endpoint', name } }, back));
+      const blockText = source.text.split('\n').slice(block.start.line - 1, block.end.line).join('\n');
+      return newRequestView({ file, name, block, text: source.text, form, comments: /(^|\s)#/.test(blockText) });
+    });
+  }
+
+  /** A block as text, for what the forms do not show: until, for_each, sequences, form bodies, schema checks… */
+  function yamlView({ file, block: key, back }) {
+    return editorShell('Edit as YAML', file, source => {
+      const block = blockOf(source, key.kind, key.kind === 'step' ? key.index : key.name);
+      if (!block) return h('div', { class: 'notice' }, 'This part of the file is no longer there.');
+      const lines = source.text.split('\n');
+      const original = lines.slice(block.start.line - 1, block.end.line).join('\n').replace(/\r/g, '');
+      const area = control('textarea', { id: 'yaml-block', class: 'textarea', rows: Math.min(Math.max(original.split('\n').length + 2, 6), 30) });
+      area.value = original;
+      const status = h('div', { 'aria-live': 'polite' });
+      const save = h('button', { type: 'submit', class: 'button primary' }, 'Save');
+      return h('form', { onsubmit: async event => {
+        event.preventDefault();
+        save.disabled = true;
+        if (await saveFile(file, editing.replaceBlock(source.text, block, area.value), source.text, status)) {
+          showMessage(`Saved in ${file}.`, 'info');
+          select(back);
+        }
+        save.disabled = false;
+      } },
+        h('p', { class: 'lead' }, 'Only these lines of the file change; tinyprobe checks the file before it is kept. The format is in docs/workflow-format.md of tinyprobe.'),
+        area,
+        h('div', { class: 'actions' }, save, h('button', { type: 'button', class: 'button', onclick: () => select(back) }, 'Cancel')),
+        status);
+    });
+  }
+
+  async function deleteBlock(file, kind, key, what, after) {
+    if (!confirm(`Delete ${what} from ${file}?`)) return;
+    const status = h('div');
+    try {
+      const source = await api(`/api/source?${query({ root: state.root, path: file })}`);
+      const block = blockOf(source, kind, key);
+      if (!block) return showMessage(`${what} is no longer in ${file}.`);
+      if (await saveFile(file, editing.removeBlock(source.text, block), source.text, status)) {
+        showMessage(`Deleted ${what}.`, 'info');
+        after?.();
+      } else {
+        $('results').prepend(status);
+      }
+    } catch (e) {
+      if (!(e instanceof RestartError)) showMessage(e.message);
+    }
+  }
+
+  // --- Auth sets -----------------------------------------------------------------------------------------------
+
+  function authView({ file, editingName = null }) {
+    return editorShell('Auth sets', file, source => {
+      const sets = source.inspect?.source?.auth ?? {};
+      const names = Object.keys(sets);
+      const status = h('div', { 'aria-live': 'polite' });
+      const formArea = h('div');
+      const describe = set => {
+        const read = editing.authFromSource('', set);
+        if (read.unsupported) return 'edited as YAML';
+        return { bearer: `Bearer ${read.token}`, header: `${read.header}: ${read.value}`, basic: `Basic, user ${read.username}`, oauth2: `OAuth2 client credentials, ${read.tokenUrl}` }[read.kind];
+      };
+
+      function showForm(name) {
+        const existing = name === null ? null : editing.authFromSource(name, sets[name]);
+        if (existing?.unsupported) {
+          formArea.replaceChildren(yamlOnly('auth set', file, { reasons: existing.unsupported, key: { kind: 'auth', name } }, { kind: 'auth', file }));
+          return;
+        }
+        const value = existing ?? { name: '', kind: 'bearer', token: '${token}' };
+        const kind = control('select', { id: 'auth-kind' },
+          [['bearer', 'Bearer token'], ['header', 'API key in a header'], ['basic', 'Basic (user and password)'], ['oauth2', 'OAuth2 client credentials']].map(([k, label]) => h('option', { value: k, selected: value.kind === k }, label)));
+        const nameInput = control('input', { id: 'auth-name', value: value.name, placeholder: 'bearer', readonly: name !== null });
+        const fields = h('div', { class: 'form' });
+        const inputs = {};
+        const field = (key, label, placeholder, hint) => {
+          inputs[key] = control('input', { id: `auth-${key}`, value: value[key] ?? '', placeholder });
+          return [h('label', { for: `auth-${key}` }, label), inputs[key], hint ? h('div', { class: 'hint' }, hint) : null];
+        };
+        const drawFields = () => {
+          const k = kind.value;
+          for (const key of Object.keys(inputs)) delete inputs[key];
+          fields.replaceChildren(...(
+            k === 'bearer' ? field('token', 'Token', '${token}', 'Sent as Authorization: Bearer …; ${token} is usually saved by a log-in step, or set in the environment.')
+            : k === 'header' ? [...field('header', 'Header', 'X-Api-Key'), ...field('value', 'Value', '${apiKey}')]
+            : k === 'basic' ? [...field('username', 'User', '${username}'), ...field('password', 'Password', '${password}')]
+            : [...field('tokenUrl', 'Token URL', '${baseUrl}oauth/token'), ...field('clientId', 'Client id', '${clientId}'), ...field('clientSecret', 'Client secret', '${clientSecret}'), ...field('scope', 'Scope', 'optional, e.g. orders:read')]
+          ).flat());
+        };
+        kind.addEventListener('change', drawFields);
+        drawFields();
+        formArea.replaceChildren(h('form', { onsubmit: async event => {
+          event.preventDefault();
+          const auth = { name: nameInput.value.trim(), kind: kind.value };
+          for (const [key, input] of Object.entries(inputs)) auth[key] = input.value.trim();
+          const problem = name === null ? editing.checkAuthName(auth.name, names) : null;
+          if (problem) return status.replaceChildren(h('div', { class: 'notice' }, problem));
+          const next = name === null
+            ? editing.addAuthSet(source.text, source.inspect.blocks, auth)
+            : editing.replaceBlock(source.text, blockOf(source, 'auth', name), editing.authSetYaml(auth, editing.indentOf(blockOf(source, 'auth', name))));
+          if (await saveFile(file, next, source.text, status)) {
+            showMessage(`Saved the auth set ${auth.name} in ${file}.`, 'info');
+            renderView();
+          }
+        } },
+          h('h2', null, name === null ? 'New auth set' : `Edit ${name}`),
+          h('div', { class: 'form' }, h('label', { for: 'auth-name' }, 'Name'), nameInput, h('label', { for: 'auth-kind' }, 'Kind'), kind),
+          fields,
+          h('div', { class: 'actions' }, h('button', { type: 'submit', class: 'button primary' }, 'Save'), h('button', { type: 'button', class: 'button', onclick: () => formArea.replaceChildren() }, 'Cancel'))));
+      }
+
+      queueMicrotask(() => { if (editingName) showForm(editingName); });
+      return h('div', null,
+        h('p', { class: 'lead' }, 'How the endpoints of this file authenticate: an endpoint names its auth set with auth:. Values such as ${token} come from a step that saves them, or from the environment.'),
+        names.length === 0 ? h('p', { class: 'aside' }, 'No auth sets yet.') : h('ol', { class: 'step-table' }, names.map(n => h('li', null,
+          h('span', { class: 'step-label' }, h('strong', null, n), h('div', { class: 'step-kind' }, describe(sets[n]))),
+          h('button', { type: 'button', class: 'button small', onclick: () => showForm(n) }, 'Edit'),
+          h('button', { type: 'button', class: 'button small', onclick: () => select({ kind: 'yaml', file, block: { kind: 'auth', name: n }, back: { kind: 'auth', file } }) }, 'YAML'),
+          h('button', { type: 'button', class: 'icon-button', 'aria-label': `Delete ${n}`, onclick: () => names.length === 1
+            ? deleteBlock(file, 'key', 'auth', `the auth set ${n}`, renderView)
+            : deleteBlock(file, 'auth', n, `the auth set ${n}`, renderView) }, '✕')))),
+        h('div', { class: 'actions' }, h('button', { type: 'button', class: 'button', onclick: () => showForm(null) }, '+ New auth set')),
+        formArea,
+        status);
+    });
+  }
+
+  // --- Steps of a workflow -------------------------------------------------------------------------------------
+
+  function stepLabel(step) {
+    if (step?.name) return step.name;
+    if (step?.call) return `call ${step.call}`;
+    if (step?.use) return `use ${step.use}`;
+    if (step?.sleep !== undefined) return `sleep ${step.sleep}`;
+    return 'step';
+  }
+
+  /** The steps as written in the file, `use` steps included, to edit, move, add and delete. */
+  function stepsEditor(workflow) {
+    return editorShell(null, workflow.path, source => {
+      const steps = source.inspect?.source?.steps ?? [];
+      const blocks = (source.inspect?.blocks ?? []).filter(b => b.kind === 'step');
+      const status = h('div', { 'aria-live': 'polite' });
+      const move = async (i, j) => {
+        const [a, b] = i < j ? [blocks[i], blocks[j]] : [blocks[j], blocks[i]];
+        if (await saveFile(workflow.path, editing.swapBlocks(source.text, a, b), source.text, status)) renderView();
+      };
+      const back = { kind: 'workflow', file: workflow.path };
+      return h('div', null,
+        h('ol', { class: 'step-table' }, steps.map((step, i) => h('li', null,
+          h('span', { class: 'step-number' }, i + 1),
+          h('span', { class: 'step-label' }, stepLabel(step),
+            step.call && step.name ? h('span', { class: 'step-kind' }, `  · call ${step.call}`) : null,
+            step.for_each ? h('span', { class: 'step-kind' }, '  · for_each') : null,
+            step.until ? h('span', { class: 'step-kind' }, '  · until') : null),
+          h('button', { type: 'button', class: 'button small', onclick: () => select({ kind: 'edit-step', file: workflow.path, index: i }) }, 'Edit'),
+          h('button', { type: 'button', class: 'button small', onclick: () => select({ kind: 'yaml', file: workflow.path, block: { kind: 'step', index: i }, back }) }, 'YAML'),
+          h('button', { type: 'button', class: 'icon-button', title: 'Move up', 'aria-label': `Move step ${i + 1} up`, disabled: i === 0, onclick: () => move(i - 1, i) }, '↑'),
+          h('button', { type: 'button', class: 'icon-button', title: 'Move down', 'aria-label': `Move step ${i + 1} down`, disabled: i === steps.length - 1, onclick: () => move(i, i + 1) }, '↓'),
+          h('button', { type: 'button', class: 'icon-button', 'aria-label': `Delete step ${i + 1}`, disabled: steps.length === 1, title: steps.length === 1 ? 'A workflow needs one step' : 'Delete', onclick: () => deleteBlock(workflow.path, 'step', i, `step ${i + 1} (${stepLabel(step)})`, renderView) }, '✕')))),
+        h('div', { class: 'actions' }, h('button', { type: 'button', class: 'button primary', onclick: () => select({ kind: 'edit-step', file: workflow.path, index: null }) }, '+ Add a step')),
+        h('p', { class: 'aside' }, 'Steps from a sequence are edited in the sequence file; here a use step is one step.'),
+        status);
+    });
+  }
+
+  /** The values of a call: the endpoint's params first, then its other arguments, then what the step already gives. */
+  function withRows(endpoint, given) {
+    const names = [];
+    for (const p of endpoint?.params ?? []) if (!names.includes(p.name)) names.push(p.name);
+    for (const a of endpoint?.arguments ?? []) if (!names.includes(a) && !state.variables.includes(a)) names.push(a);
+    for (const g of given) if (!names.includes(g.name)) names.push(g.name);
+    return names.map(n => ({ name: n, value: given.find(g => g.name === n)?.value ?? '', required: (endpoint?.params ?? []).some(p => p.name === n && p.required) }));
+  }
+
+  /** The form of one step: a call with its values, expected status, checks and saves; or a wait. */
+  function stepForm({ endpoints, initial, onSave, onCancel, status }) {
+    const kind = control('select', { id: 'step-kind' }, h('option', { value: 'call', selected: initial.kind !== 'sleep' }, 'Call an endpoint'), h('option', { value: 'sleep', selected: initial.kind === 'sleep' }, 'Wait'));
+    const name = control('input', { id: 'step-name', value: initial.name ?? '', placeholder: 'What this step checks, e.g. The user can be read' });
+    const call = control('select', { id: 'step-call' }, endpoints.map(e => h('option', { value: e.name, selected: initial.call === e.name }, `${e.name}  (${e.method} ${e.path})`)));
+    const sleep = control('input', { id: 'step-sleep', value: initial.sleep ?? '1s', placeholder: '1s, 500ms' });
+    const status_ = control('input', { id: 'step-status', value: initial.status ?? '', placeholder: '200, or 200, 204 (any 2xx when empty)' });
+    const withArea = h('div', { class: 'rows' });
+    const checkRows = h('div', { class: 'rows' });
+    const saveRows = h('div', { class: 'rows' });
+    let given = initial.with ?? [];
+
+    const drawWith = () => {
+      const endpoint = endpoints.find(e => e.name === call.value);
+      given = [...withArea.querySelectorAll('[data-name]')].map(r => ({ name: r.dataset.name, value: r.querySelector('input').value })).concat(given.filter(g => !withArea.querySelector(`[data-name="${CSS.escape(g.name)}"]`)));
+      withArea.replaceChildren(...withRows(endpoint, given).map(r => h('div', { class: 'row', 'data-name': r.name },
+        h('label', { class: 'mono', for: `with-${r.name}` }, r.name, r.required ? h('span', { class: 'required' }, '*') : null),
+        control('input', { id: `with-${r.name}`, value: r.value, placeholder: state.variables.includes(r.name) ? 'from the environment' : r.required ? 'required' : 'empty: a value saved by an earlier step, or not sent' }),
+        h('span'))));
+    };
+    const addCheck = (c = { path: '$.', op: 'eq', value: '' }) => {
+      const row = h('div', { class: 'row check-row' },
+        control('input', { value: c.path, placeholder: '$.id', 'aria-label': 'JSONPath of the value' }),
+        control('select', { 'aria-label': 'Condition' }, editing.OPERATORS.map(([k, label]) => h('option', { value: k, selected: c.op === k }, label))),
+        control('input', { value: c.value, placeholder: 'value', 'aria-label': 'Expected value' }),
+        h('button', { type: 'button', class: 'icon-button', 'aria-label': 'Remove this check', onclick: () => row.remove() }, '✕'));
+      checkRows.append(row);
+    };
+    const addSave = (s = { name: '', path: '$.' }) => {
+      const row = h('div', { class: 'row' },
+        control('input', { value: s.name, placeholder: 'userId', 'aria-label': 'Variable' }),
+        control('input', { value: s.path, placeholder: '$.id', 'aria-label': 'JSONPath of the value to save' }),
+        h('button', { type: 'button', class: 'icon-button', 'aria-label': 'Remove this save', onclick: () => row.remove() }, '✕'));
+      saveRows.append(row);
+    };
+    (initial.checks ?? []).forEach(addCheck);
+    (initial.saves ?? []).forEach(addSave);
+    call.addEventListener('change', drawWith);
+
+    const callPart = h('div', null,
+      h('div', { class: 'form' },
+        h('label', { for: 'step-name' }, 'Name'), name,
+        h('label', { for: 'step-call' }, 'Endpoint'), call,
+        h('label', null, 'Values'), withArea,
+        h('label', { for: 'step-status' }, 'Status'), status_,
+        h('label', null, 'Checks'), h('div', null, checkRows, h('button', { type: 'button', class: 'button small', onclick: () => addCheck() }, '+ Check')),
+        h('div', { class: 'hint' }, 'A check reads a value of the JSON response by its path: $.id, $.items[0].name, $ for the whole body. "is one of" takes values separated by commas.'),
+        h('label', null, 'Save'), h('div', null, saveRows, h('button', { type: 'button', class: 'button small', onclick: () => addSave() }, '+ Save a value')),
+        h('div', { class: 'hint' }, 'A saved value is used by the next steps as ${name}: a token, an id.')));
+    const sleepPart = h('div', { class: 'form' }, h('label', { for: 'step-sleep' }, 'Wait'), sleep);
+    const toggle = () => { callPart.hidden = kind.value !== 'call'; sleepPart.hidden = kind.value !== 'sleep'; };
+    kind.addEventListener('change', toggle);
+    drawWith();
+    toggle();
+
+    return h('form', { onsubmit: event => {
+      event.preventDefault();
+      if (kind.value === 'sleep') return onSave({ kind: 'sleep', sleep: sleep.value });
+      if (!call.value) return status.replaceChildren(h('div', { class: 'notice' }, 'Pick the endpoint the step calls.'));
+      onSave({
+        kind: 'call',
+        name: name.value.trim(),
+        call: call.value,
+        with: [...withArea.querySelectorAll('[data-name]')].map(r => ({ name: r.dataset.name, value: r.querySelector('input').value })),
+        status: status_.value,
+        checks: [...checkRows.children].map(r => ({ path: r.children[0].value.trim(), op: r.children[1].value, value: r.children[2].value })).filter(c => c.path && c.path !== '$.'),
+        saves: [...saveRows.children].map(r => ({ name: r.children[0].value.trim(), path: r.children[1].value.trim() })).filter(s => s.name && s.path)
+      });
+    } },
+      h('div', { class: 'form' }, h('label', { for: 'step-kind' }, 'Step'), kind),
+      callPart, sleepPart,
+      h('div', { class: 'actions' }, h('button', { type: 'submit', class: 'button primary' }, 'Save'), onCancel ? h('button', { type: 'button', class: 'button', onclick: onCancel }, 'Cancel') : null),
+      status);
+  }
+
+  function stepEditView({ file, index }) {
+    const back = { kind: 'workflow', file };
+    return editorShell(index === null ? 'Add a step' : `Edit step ${index + 1}`, file, source => {
+      const blocks = (source.inspect?.blocks ?? []).filter(b => b.kind === 'step');
+      const endpoints = source.inspect?.endpoints ?? [];
+      const status = h('div', { 'aria-live': 'polite' });
+      let initial = { kind: 'call', call: endpoints[0]?.name };
+      if (index !== null) {
+        initial = editing.stepFromSource(source.inspect?.source?.steps?.[index]);
+        if (initial.unsupported) return yamlOnly('step', file, { reasons: initial.unsupported, key: { kind: 'step', index } }, back);
+      }
+      return stepForm({
+        endpoints, initial, status,
+        onCancel: () => select(back),
+        onSave: async step => {
+          const block = index === null ? blocks[blocks.length - 1] : blocks[index];
+          const yaml = editing.stepYaml(step, editing.indentOf(block));
+          const next = index === null ? editing.insertAfter(source.text, block, yaml) : editing.replaceBlock(source.text, block, yaml);
+          if (await saveFile(file, next, source.text, status)) {
+            showMessage(index === null ? `Added a step to ${file}.` : `Saved step ${index + 1}.`, 'info');
+            select(back);
+          }
+        }
+      });
+    });
+  }
+
+  /** A new workflow: its name, the API files it imports, and its first step. */
+  function newWorkflowView() {
+    const apiFiles = state.model.apis.filter(a => !a.workflow);
+    if (apiFiles.length === 0) {
+      return h('div', null, h('h1', null, 'New workflow'), h('div', { class: 'notice info' }, 'A workflow calls the endpoints of API files: add a request first with + New request.'));
+    }
+    const status = h('div', { 'aria-live': 'polite' });
+    const name = control('input', { id: 'workflow-name', class: 'input', placeholder: 'Smoke test' });
+    const picks = apiFiles.map(a => ({ file: a.path, box: h('input', { type: 'checkbox', checked: true, id: `import-${a.path}` }) }));
+    const stepArea = h('div');
+    const endpointsOf = () => apiFiles.filter(a => picks.find(p => p.file === a.path).box.checked).flatMap(a => a.endpoints);
+    const drawStep = () => stepArea.replaceChildren(stepForm({
+      endpoints: endpointsOf(), initial: { kind: 'call', call: endpointsOf()[0]?.name }, status,
+      onSave: async step => {
+        const target = editing.workflowFileName(name.value);
+        if (!target) return status.replaceChildren(h('div', { class: 'notice' }, 'Give the workflow a name, e.g. Smoke test'));
+        if (state.listing.files.some(f => f.path === target)) return status.replaceChildren(h('div', { class: 'notice' }, `${target} already exists.`));
+        const imports = picks.filter(p => p.box.checked).map(p => editing.relativePath(target, p.file));
+        if (imports.length === 0) return status.replaceChildren(h('div', { class: 'notice' }, 'Pick at least one API file.'));
+        if (await saveFile(target, editing.newWorkflowFile({ name: name.value.trim(), imports, step }), null, status)) {
+          showMessage(`Created ${target}.`, 'info');
+          select({ kind: 'workflow', file: target });
+        }
+      }
+    }));
+    for (const p of picks) p.box.addEventListener('change', drawStep);
+    drawStep();
+    return h('div', null,
+      h('h1', null, 'New workflow'),
+      h('p', { class: 'lead' }, 'A workflow is a test: steps that call endpoints, check the answers and pass values from one step to the next. It starts with one step; add the others from its Edit view.'),
+      h('div', { class: 'form' },
+        h('label', { for: 'workflow-name' }, 'Name'), name,
+        h('label', null, 'Uses the API'), h('div', null, picks.map(p => h('label', { class: 'check', for: p.box.id }, p.box, ` ${p.file}`)))),
+      h('h2', null, 'First step'),
+      stepArea);
   }
 
   // --- Environment -------------------------------------------------------------------------------------------

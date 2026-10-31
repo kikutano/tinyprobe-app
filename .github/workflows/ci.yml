@@ -25,7 +25,7 @@ jobs:
         with:
           node-version: '22'
       - run: dotnet test Tinyprobe.App.slnx -c Release
-      - run: node --test test/
+      - run: node --test "test/*.test.js"
       - name: The launcher starts
         shell: bash
         run: dotnet run --project launcher -c Release -- --version

@@ -22,7 +22,7 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - run: dotnet test Tinyprobe.App.slnx -c Release
-      - run: node --test test/
+      - run: node --test "test/*.test.js"
 
   # The same platforms as tinyprobe, so the app finds a tinyprobe for its own platform.
   build:

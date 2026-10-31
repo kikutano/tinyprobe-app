@@ -48,7 +48,7 @@ unit_tests() {
   step "Unit tests (launcher)"
   dotnet test "$ROOT/Tinyprobe.App.slnx" --no-build -nologo -v quiet
   step "Unit tests (page)"
-  node --test "$ROOT/test/"
+  node --test "$ROOT/test/*.test.js"
 }
 
 aot() {

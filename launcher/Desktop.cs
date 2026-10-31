@@ -25,6 +25,14 @@ internal static class Desktop
 
     public static bool CanAddIcon => OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() || OperatingSystem.IsLinux();
 
+    /// <summary>Where the icon is, in the words of each system.</summary>
+    public static string IconPlace =>
+        OperatingSystem.IsWindows() ? "the Start menu and the desktop" : OperatingSystem.IsMacOS() ? "Applications (~/Applications/tinyprobe.app)" : "the applications menu";
+
+    /// <summary>The copy of the launcher the icon starts.</summary>
+    public static string InstalledPath(AppPaths paths) =>
+        Path.Combine(paths.App, OperatingSystem.IsWindows() ? "tinyprobe-app.exe" : "tinyprobe-app");
+
     /// <summary>
     /// Copies the launcher into the data folder and points the icon at that copy, so the icon keeps working when
     /// the download is deleted. The icon opens a console window, which is how the app is stopped.
@@ -37,8 +45,19 @@ internal static class Desktop
         try
         {
             Directory.CreateDirectory(paths.App);
-            var installed = Path.Combine(paths.App, Path.GetFileName(running));
-            if (!Workspace.SamePath(Path.GetFullPath(running), Path.GetFullPath(installed))) File.Copy(running, installed, overwrite: true);
+            var installed = InstalledPath(paths);
+            if (!Workspace.SamePath(Path.GetFullPath(running), Path.GetFullPath(installed)))
+            {
+                try
+                {
+                    File.Copy(running, installed, overwrite: true);
+                }
+                catch (IOException)
+                {
+                    // The installed copy is running: Windows and Linux do not let a running program be replaced.
+                    return "tinyprobe-app is running: close its window, then install again";
+                }
+            }
 
             if (OperatingSystem.IsWindows()) return WindowsShortcuts(installed);
             if (OperatingSystem.IsMacOS()) return MacApplication(paths, installed);

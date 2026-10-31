@@ -7,10 +7,13 @@ const string Usage = """
 
     Usage:
       tinyprobe-app [folder] [--port <n>] [--no-open]
+      tinyprobe-app --install
 
       folder        Open this folder in the page (its tinyprobe/ subfolder when it has one).
       --port <n>    The port on 127.0.0.1 (default: the last one used, first 4747).
       --no-open     Do not open the browser; print the link instead.
+      --install     Copy the app to its folder, add the tinyprobe icon, and download tinyprobe
+                    if it is missing (what install.sh and install.ps1 run).
       --version     Show the version.
       -h, --help    Show this help.
 
@@ -20,6 +23,7 @@ const string Usage = """
 string? folder = null;
 int? port = null;
 var openBrowser = true;
+var install = false;
 for (var i = 0; i < args.Length; i++)
 {
     switch (args[i])
@@ -32,6 +36,9 @@ for (var i = 0; i < args.Length; i++)
             return 0;
         case "--no-open":
             openBrowser = false;
+            break;
+        case "--install":
+            install = true;
             break;
         case "--port":
             if (i + 1 >= args.Length || !int.TryParse(args[++i], out var number) || number is < 1 or > 65535)
@@ -50,6 +57,7 @@ for (var i = 0; i < args.Length; i++)
 
 var paths = AppPaths.Default();
 var config = Config.Load(paths);
+if (install) return await Install(paths, config);
 
 // A second click on the icon: the running app opens a new tab instead of a second app starting.
 if (await Instance.HandOver(paths, folder, openBrowser)) return 0;
@@ -102,6 +110,29 @@ await server.Serve(stop.Token);
 Instance.Remove(paths, secret);
 foreach (var signal in signals) signal.Dispose();
 return 0;
+
+// The installers' last step, here so that the scripts stay a download and a checksum.
+static async Task<int> Install(AppPaths paths, Config config)
+{
+    Console.WriteLine($"  Installing tinyprobe-app {Api.Version}");
+    if (Desktop.AddIcon(paths) is { } error) return Fail(error);
+    config.SetShortcut("created");
+    Console.WriteLine($"  App      : {Desktop.InstalledPath(paths)}");
+    Console.WriteLine($"  Icon     : {Desktop.IconPlace}");
+
+    var cli = new TinyprobeCli(paths);
+    await cli.Locate();
+    if (cli.Current is null)
+    {
+        Console.WriteLine(cli.Problem is { } problem ? $"  {problem}" : $"  tinyprobe {TinyprobeCli.Minimum} or newer is not installed; downloading the latest release");
+        if (await cli.Download(CancellationToken.None) is { } downloadError) return Fail(downloadError);
+    }
+    var current = cli.Current!;
+    Console.WriteLine($"  tinyprobe: {current.Version} ({(current.Source == "app" ? "the app's own copy" : current.Path)})");
+    Console.WriteLine();
+    Console.WriteLine("  Start it from the tinyprobe icon. Run the installer again to update it.");
+    return 0;
+}
 
 static int Fail(string message)
 {

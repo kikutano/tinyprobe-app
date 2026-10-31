@@ -70,9 +70,9 @@ ok "no cookie, another Host, another Origin, ../ and a folder not opened are ref
 echo "State and folder"
 curl -s -b "$JAR" "$BASE/api/state" | json "d['tinyprobe']['source'], d['folders'][0]['path'] == '$ROOT'" | grep -q "env True" || fail "state"
 FOLDER=$(curl -s -b "$JAR" "$BASE/api/folder?root=$(q "$ROOT")")
-echo "$FOLDER" | json "sorted({f['inspect']['kind'] for f in d['files']}), all(f['inspect']['valid'] for f in d['files']), d['environments']" \
+printf '%s\n' "$FOLDER" | json "sorted({f['inspect']['kind'] for f in d['files']}), all(f['inspect']['valid'] for f in d['files']), d['environments']" \
   | grep -q "\['api', 'sequence', 'workflow'\] True \['environment.yaml'\]" || fail "folder: $(echo "$FOLDER" | head -c 300)"
-ok "$(echo "$FOLDER" | json "len(d['files'])") tinyprobe files, all valid, with their kinds"
+ok "$(printf '%s\n' "$FOLDER" | json "len(d['files'])") tinyprobe files, all valid, with their kinds"
 
 echo "Call and runs"
 post /api/call "{\"root\":\"$ROOT\",\"file\":\"example/api/testserver.yaml\",\"endpoint\":\"status\",\"with\":[{\"name\":\"code\",\"value\":\"404\"}],\"env\":\"environment.yaml\"}" > "$WORK/call.ndjson"
@@ -120,7 +120,7 @@ ok "an environment variable is added; the history is kept for the folder"
 echo "Visual editor"
 if "$TINYPROBE" --help | grep -q -- '--source'; then
   SOURCE=$(curl -s -b "$JAR" "$BASE/api/source?root=$(q "$ROOT")&path=example%2Fapi%2Ftestserver.yaml")
-  echo "$SOURCE" | json "d['inspect']['source']['endpoints']['status']['path'], len([b for b in d['inspect']['blocks'] if b['kind'] == 'endpoint']) == len(d['inspect']['source']['endpoints']), d['text'].startswith(open('$ROOT/example/api/testserver.yaml').read()[:20])" \
+  printf '%s\n' "$SOURCE" | json "d['inspect']['source']['endpoints']['status']['path'], len([b for b in d['inspect']['blocks'] if b['kind'] == 'endpoint']) == len(d['inspect']['source']['endpoints']), d['text'].startswith(open('$ROOT/example/api/testserver.yaml').read()[:20])" \
     | grep -q '/api/status/${code} True True' || fail "source: $(echo "$SOURCE" | head -c 300)"
   ok "a file as written, with its blocks, for the forms"
 else

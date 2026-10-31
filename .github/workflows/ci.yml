@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: dotnet test Tinyprobe.App.slnx -c Release
+      - run: node --test test/
+      - name: The launcher starts
+        shell: bash
+        run: dotnet run --project launcher -c Release -- --version
+
+  # The Native AOT launcher, on tinyprobe's docs/example with the latest tinyprobe release and its test server.
+  e2e:
+    name: End-to-end and performance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install Native AOT prerequisites
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+
+      - name: Install tinyprobe
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/kikutano/tinyprobe/main/install.sh | sh
+          echo "TINYPROBE_VERSION=$(~/.local/bin/tinyprobe --version)" >> "$GITHUB_ENV"
+
+      # The examples of the same tinyprobe release, so the checks match the binary.
+      - uses: actions/checkout@v4
+        with:
+          repository: kikutano/tinyprobe
+          ref: v${{ env.TINYPROBE_VERSION }}
+          path: tinyprobe
+          sparse-checkout: docs
+
+      - name: Start the test server
+        run: |
+          docker run -d --name testserver -p 127.0.0.1:5122:5122 "ghcr.io/kikutano/tinyprobe-testserver:${TINYPROBE_VERSION}"
+          for i in $(seq 1 60); do curl -sf http://localhost:5122/api/public > /dev/null && exit 0; sleep 1; done
+          docker logs testserver; exit 1
+
+      - name: Native AOT
+        run: dotnet publish launcher/Tinyprobe.App.csproj -c Release -r linux-x64 -o publish
+
+      - name: End-to-end
+        run: scripts/e2e.sh publish/tinyprobe-app ~/.local/bin/tinyprobe tinyprobe/docs http://localhost:5122/
+
+      - name: Performance guard
+        run: scripts/perf.sh publish/tinyprobe-app web
+
+      - name: Test server log
+        if: failure()
+        run: docker logs testserver || true

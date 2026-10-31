@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>tinyprobe</title>
+  <meta name="description" content="Call endpoints and run tinyprobe workflows from the browser.">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/shared/run-view.css">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><img src="/icon.svg" alt="" width="22" height="22"><span>tinyprobe</span></div>
+    <button type="button" id="folder-button" class="folder-button" hidden></button>
+    <label class="env" id="env-label" hidden>
+      <span>Environment</span>
+      <select id="env"></select>
+    </label>
+    <span class="spacer"></span>
+    <button type="button" id="refresh" class="icon-button" title="Read the folder again" aria-label="Read the folder again" hidden>↻</button>
+    <button type="button" id="settings-button" class="icon-button" title="Settings" aria-label="Settings">⚙</button>
+  </header>
+
+  <div id="banner"></div>
+
+  <div class="shell" id="shell">
+    <nav class="sidebar" id="sidebar" aria-label="Files of the folder" hidden></nav>
+    <main class="main">
+      <section id="view" class="view"></section>
+      <section id="results" class="results" aria-label="Results"></section>
+    </main>
+  </div>
+
+  <dialog id="folders" class="dialog" aria-labelledby="folders-title">
+    <form method="dialog" class="dialog-head">
+      <h2 id="folders-title">Open a folder</h2>
+      <button class="icon-button" value="close" aria-label="Close">✕</button>
+    </form>
+    <div id="folders-body" class="dialog-body"></div>
+  </dialog>
+
+  <dialog id="settings" class="dialog" aria-labelledby="settings-title">
+    <form method="dialog" class="dialog-head">
+      <h2 id="settings-title">Settings</h2>
+      <button class="icon-button" value="close" aria-label="Close">✕</button>
+    </form>
+    <div id="settings-body" class="dialog-body"></div>
+  </dialog>
+
+  <script src="/lib/core.js"></script>
+  <script src="/shared/run-view.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

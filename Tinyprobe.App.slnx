@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="launcher/Tinyprobe.App.csproj" />
+  <Folder Name="/tests/">
+    <Project Path="tests/Tinyprobe.App.Tests/Tinyprobe.App.Tests.csproj" />
+  </Folder>
+</Solution>

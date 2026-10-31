@@ -1,0 +1,12 @@
+# .NET build output
+[Bb]in/
+[Oo]bj/
+
+# Editors
+.vs/
+*.user
+*.suo
+
+# Local development output (scripts/dev.sh)
+.dev/
+publish/

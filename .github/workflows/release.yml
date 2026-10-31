@@ -1,0 +1,132 @@
+name: Release
+
+# Push a SemVer tag to publish a release, e.g.:
+#   git tag -a v0.1.0 --cleanup=whitespace -F notes.md
+#   git push origin v0.1.0
+# The tag message after its first line goes on top of the release notes.
+# Tags with a suffix (v0.2.0-beta.1) are published as pre-releases.
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet test Tinyprobe.App.slnx -c Release
+      - run: node --test test/
+
+  # The same platforms as tinyprobe, so the app finds a tinyprobe for its own platform.
+  build:
+    name: Build (${{ matrix.rid }})
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { rid: win-x64,     os: windows-latest }
+          - { rid: linux-x64,   os: ubuntu-latest }
+          - { rid: linux-arm64, os: ubuntu-24.04-arm }
+          - { rid: osx-arm64,   os: macos-latest }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install Native AOT prerequisites
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+
+      - name: Publish Native AOT
+        shell: bash
+        run: dotnet publish launcher/Tinyprobe.App.csproj -c Release -r ${{ matrix.rid }} -o publish -p:Version="${GITHUB_REF_NAME#v}"
+
+      - name: Smoke test
+        shell: bash
+        run: test "$(./publish/tinyprobe-app --version)" = "${GITHUB_REF_NAME#v}"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path publish/tinyprobe-app.exe -DestinationPath dist/tinyprobe-app-${{ matrix.rid }}.zip
+
+      - name: Package (Linux / macOS)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist
+          tar -czf dist/tinyprobe-app-${{ matrix.rid }}.tar.gz -C publish tinyprobe-app
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tinyprobe-app-${{ matrix.rid }}
+          path: dist/*
+
+  # Alpine (musl), built inside the .NET SDK's Alpine image: a glibc host cannot link for musl.
+  build-musl:
+    name: Build (${{ matrix.rid }})
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { rid: linux-musl-x64,   os: ubuntu-latest }
+          - { rid: linux-musl-arm64, os: ubuntu-24.04-arm }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish Native AOT (smoke test included)
+        run: |
+          mkdir -p publish
+          docker run --rm -v "$PWD:/src:ro" -v "$PWD/publish:/out" -e RID=${{ matrix.rid }} -e VERSION="${GITHUB_REF_NAME#v}" \
+            mcr.microsoft.com/dotnet/sdk:10.0-alpine sh -euc '
+              apk add --no-cache clang build-base zlib-dev >/dev/null
+              cp -r /src /build && rm -rf /build/launcher/bin /build/launcher/obj
+              dotnet publish /build/launcher/Tinyprobe.App.csproj -c Release -r "$RID" -o /build/publish -p:Version="$VERSION"
+              cp /build/publish/tinyprobe-app /out/tinyprobe-app
+              test "$(/out/tinyprobe-app --version)" = "$VERSION"
+            '
+      - name: Package
+        run: |
+          mkdir -p dist
+          tar -czf dist/tinyprobe-app-${{ matrix.rid }}.tar.gz -C publish tinyprobe-app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tinyprobe-app-${{ matrix.rid }}
+          path: dist/*
+
+  release:
+    name: Publish GitHub Release
+    needs: [build, build-musl]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Release notes from the tag message
+        run: |
+          git fetch --force --depth 1 origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+          git tag -l --format='%(contents:body)' "${GITHUB_REF_NAME}" > "${RUNNER_TEMP}/tag-notes.md"
+          cat "${RUNNER_TEMP}/tag-notes.md"
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum tinyprobe-app-* > SHA256SUMS && cat SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          body_path: ${{ runner.temp }}/tag-notes.md
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true

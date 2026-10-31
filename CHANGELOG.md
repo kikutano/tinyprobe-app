@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - **The visual editor**: edit an endpoint, add and edit auth sets (bearer token, API key header, Basic, OAuth2 client credentials), create a workflow with its first step, and add, edit, move and delete its steps: the endpoint, its values, the expected status, checks on the response (equals, >, contains, is one of, matches, exists...) and the values to save. Every form shows what is written, rewrites only its block of the file, and keeps the change only if tinyprobe accepts the file. What the forms do not show is edited as YAML, one block at a time. It reads files with `tinyprobe inspect --source` (tinyprobe 0.21.0).
 - **The diagram of a workflow**: its steps in order, the steps of a sequence grouped under its name, `until` and `for_each` marked, and a colored line for each saved value from the step that saves it to the steps that use it. What comes from the environment or the workflow's variables is listed above, and a value defined nowhere is shown in red. It lights up as the workflow runs (the item of a `for_each`, the attempt of an `until`), and again when the workflow is opened later. Click a step for what it sends, checks and saves, and its last result. **List** shows the steps as before.

@@ -90,6 +90,9 @@ internal sealed class Api
             case ("GET", "/api/folder"): await Folder(request, response, gone); break;
             case ("GET", "/api/file"): await ReadFile(request, response); break;
             case ("POST", "/api/save"): await Save(request, response, gone); break;
+            case ("POST", "/api/environment"): await WriteEnvironment(request, response, gone); break;
+            case ("GET", "/api/history"): await ReadHistory(request, response); break;
+            case ("POST", "/api/history"): await WriteHistory(request, response); break;
             case ("POST", "/api/call"): await Call(request, response, gone); break;
             case ("POST", "/api/run"): await Run(request, response, gone); break;
             case ("POST", "/api/icon"): await Icon(request, response); break;
@@ -421,6 +424,86 @@ internal sealed class Api
             w.WriteStartObject();
             w.WriteBoolean("saved", saved);
             Json.WriteRaw(w, "inspect", output);
+            w.WriteEndObject();
+        }));
+    }
+
+    /// <summary>
+    /// Writes an environment file the page edited. Environment files are not tinyprobe files, so there is no
+    /// `inspect` here: the page edits only the lines of one variable, and only files named like environments.
+    /// </summary>
+    private async Task WriteEnvironment(HttpRequest request, HttpResponse response, CancellationToken gone)
+    {
+        using var body = Parse(request);
+        if (body is null)
+        {
+            await response.Json(400, Json.Error("The request is not JSON."));
+            return;
+        }
+        var json = body.RootElement;
+        if (await RootOf(Json.String(json, "root"), response) is not { } root) return;
+        var relative = Json.String(json, "path");
+        if (relative is null || !Workspace.IsEnvironmentFile(relative))
+        {
+            await response.Json(400, Json.Error("Only environment files (env.yaml, env.local.yaml...) are written here."));
+            return;
+        }
+        if (await FileOf(root, relative, response) is not { } file) return;
+        var basis = Json.String(json, "basis");
+        var previous = File.Exists(file) ? await File.ReadAllTextAsync(file, gone) : null;
+        if (previous is null || previous != basis)
+        {
+            await response.Json(409, Json.Error("The file changed on disk since it was read."));
+            return;
+        }
+        await File.WriteAllTextAsync(file, Json.String(json, "text") ?? "", new UTF8Encoding(false), gone);
+        await response.Json(200, Json.Write(w =>
+        {
+            w.WriteStartObject();
+            w.WriteBoolean("saved", true);
+            w.WriteEndObject();
+        }));
+    }
+
+    // --- History -----------------------------------------------------------------------------------------------
+
+    private const int MaxHistory = 8 * 1024 * 1024;
+
+    /// <summary>
+    /// One history file per folder, in the app's data folder (readable by this user only): requests and responses
+    /// carry credentials, so they stay out of the user's project, as in the extension.
+    /// </summary>
+    private string HistoryFile(string root) =>
+        Path.Combine(_paths.Data, "history", Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(root)))[..16] + ".json");
+
+    private async Task ReadHistory(HttpRequest request, HttpResponse response)
+    {
+        if (await RootOf(request.Query.GetValueOrDefault("root"), response) is not { } root) return;
+        var file = HistoryFile(root);
+        await response.Json(200, File.Exists(file) ? await File.ReadAllBytesAsync(file) : "[]"u8.ToArray());
+    }
+
+    /// <summary>The page keeps the list (newest first, at most 50, bodies cut): the launcher only stores it.</summary>
+    private async Task WriteHistory(HttpRequest request, HttpResponse response)
+    {
+        using var body = Parse(request);
+        if (body is null || await RootOf(Json.String(body.RootElement, "root"), response) is not { } root) return;
+        if (!body.RootElement.TryGetProperty("entries", out var entries) || entries.ValueKind != JsonValueKind.Array)
+        {
+            await response.Json(400, Json.Error("The history is a list of entries."));
+            return;
+        }
+        var json = Json.Write(w => entries.WriteTo(w));
+        if (json.Length > MaxHistory)
+        {
+            await response.Json(413, Json.Error("The history is too large."));
+            return;
+        }
+        AppPaths.WritePrivate(HistoryFile(root), json);
+        await response.Json(200, Json.Write(w =>
+        {
+            w.WriteStartObject();
+            w.WriteNumber("entries", entries.GetArrayLength());
             w.WriteEndObject();
         }));
     }

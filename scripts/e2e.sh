@@ -104,6 +104,19 @@ curl -s -b "$JAR" -H "$ORIGIN" -H "$TYPE" --data "@$WORK/broken.json" "$BASE/api
 [ "$(cksum < "$ROOT/example/api/testserver.yaml")" = "$BEFORE" ] || fail "the file was not restored"
 ok "a save that tinyprobe rejects leaves the file as it was"
 
+echo "Environment and history"
+python3 - "$ROOT/environment.yaml" "$ROOT" > "$WORK/env.json" <<'EOF'
+import json, sys
+text = open(sys.argv[1]).read()
+print(json.dumps({"root": sys.argv[2], "path": "environment.yaml", "text": text + "e2eVariable: 42\n", "basis": text}))
+EOF
+curl -s -b "$JAR" -H "$ORIGIN" -H "$TYPE" --data "@$WORK/env.json" "$BASE/api/environment" | json "d['saved']" | grep -q True || fail "the environment was not written"
+grep -q '^e2eVariable: 42$' "$ROOT/environment.yaml" || fail "the environment file does not have the new variable"
+[ "$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR" -H "$ORIGIN" -H "$TYPE" --data "@$WORK/env.json" "$BASE/api/environment")" = 409 ] || fail "a stale environment edit was accepted"
+post /api/history "{\"root\":\"$ROOT\",\"entries\":[{\"endpoint\":\"status\",\"status\":404}]}" | json "d['entries']" | grep -q '^1$' || fail "history write"
+curl -s -b "$JAR" "$BASE/api/history?root=$(q "$ROOT")" | json "d[0]['endpoint']" | grep -q '^status$' || fail "history read"
+ok "an environment variable is added; the history is kept for the folder"
+
 echo "Second start"
 TINYPROBE_APP_DATA="$WORK/data" "$APP" --no-open > "$WORK/second.txt" 2>&1 || fail "the second start failed"
 grep -q "already running: $BASE/open?t=" "$WORK/second.txt" || fail "the second start did not hand over: $(cat "$WORK/second.txt")"

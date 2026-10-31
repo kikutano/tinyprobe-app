@@ -53,7 +53,8 @@ In Chrome and Edge, **Install app** (in the address bar) gives tinyprobe its own
 - **Open a folder**: usually the `tinyprobe/` folder of a project (opening the project opens it). Recent folders are one click away.
 - **Send a request**: pick an endpoint, fill in its values and click **Send**. You see the status, the time, the response with its headers, and the request exactly as it was sent.
 - **Run workflows**: a workflow is a test: steps that call endpoints, check the answers and pass values (a token, an id) from one step to the next. **Run** runs it, **Run to here** runs it up to a step and shows that step's response, **Run all workflows** runs the folder.
-- **Pick the environment**: the env file (`env.local.yaml`, `env.staging.yaml`...) with the base URL and the credentials. Its variable names are listed; their values stay in the file.
+- **Pick and edit the environment**: the env file (`env.local.yaml`, `env.staging.yaml`...) with the base URL and the credentials. **Environment** lists its variables: change a value, add or delete one, and the file is rewritten line by line, its comments and order kept. Values whose name looks like a secret are hidden until you show them.
+- **Look back**: **History** keeps the last 50 requests you sent, with their responses. Open one again, or send it again with the environment picked now. It is kept in the app's folder on your computer, not in your project, since requests carry credentials.
 - **Add a request**: **+ New request** writes a new endpoint into an API file, or starts a new one. tinyprobe checks the file before it is kept, so a form never leaves a broken file.
 
 A request sent on its own remembers nothing for the next one. Values that go from one request to another are saved by a workflow, so every test says where its values come from and runs the same way everywhere.

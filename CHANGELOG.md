@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0
+
+- **Environment**: the variables of the selected env file, edited in place. A change rewrites only that variable's lines, so comments and order stay; names that look like secrets are hidden until shown. Block values (on several lines) are edited in the file.
+- **History**: the last 50 requests sent from the app, per folder, newest first, with status and time. Open one to see its request and response again, or send it again with its values and the environment picked now. Kept in the app's data folder, bodies cut at 64 KiB.
+- The editing of environment files and the history are shared with the VS Code extension (`web/shared/`), as the run view is.
+
 ## 0.1.1
 
 - **Install with one command**: `curl -fsSL https://raw.githubusercontent.com/kikutano/tinyprobe-app/main/install.sh | sh` on Linux and macOS, `irm https://raw.githubusercontent.com/kikutano/tinyprobe-app/main/install.ps1 | iex` on Windows. The app is checked against the release's checksums, the tinyprobe icon is added, and tinyprobe is downloaded if it is missing; no warning for an unsigned app. Run it again to update.

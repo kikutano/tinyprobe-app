@@ -6,6 +6,11 @@
 
   const core = globalThis.tinyprobeCore;
   const runView = globalThis.tinyprobeRunView;
+  const envFile = globalThis.tinyprobeEnvironmentFile;
+  const requestHistory = globalThis.tinyprobeHistory;
+
+  /** As in the extension: the last 50 calls, bodies cut at 64 KiB. */
+  const HISTORY_SIZE = 50;
 
   const state = {
     info: null,
@@ -15,7 +20,8 @@
     environment: null,
     selection: { kind: 'home' },
     outcomes: new Map(),
-    variables: []
+    variables: [],
+    history: []
   };
 
   // --- Helpers ---------------------------------------------------------------------------------------------
@@ -114,6 +120,7 @@
     state.outcomes = new Map();
     remember('root', root);
     $('results').replaceChildren();
+    state.history = await api(`/api/history?${query({ root })}`).catch(() => []);
     await loadListing();
   }
 
@@ -232,8 +239,11 @@
     const isSelected = (kind, file, name) => selected.kind === kind && selected.file === file && (name === undefined || selected.name === name);
 
     const groups = [];
-    groups.push(h('div', { class: 'group' },
-      item({ label: 'Overview', mark: '⌂', selected: selected.kind === 'home', onclick: () => select({ kind: 'home' }) })));
+    // The overview, the environment and the history first: the list of endpoints can be long.
+    groups.push(h('div', { class: 'group' }, h('ul', { class: 'tree' },
+      h('li', null, item({ label: 'Overview', mark: '⌂', selected: selected.kind === 'home', onclick: () => select({ kind: 'home' }) })),
+      h('li', null, item({ mark: '⚙', label: state.environment ? `Environment: ${baseName(state.environment)}` : 'Environment', selected: selected.kind === 'environment', onclick: () => select({ kind: 'environment' }) })),
+      h('li', null, item({ mark: '↺', label: state.history.length > 0 ? `History (${state.history.length})` : 'History', selected: selected.kind === 'history', onclick: () => select({ kind: 'history' }) })))));
 
     const apiGroup = h('div', { class: 'group' }, h('div', { class: 'group-title' }, h('span', null, 'API')));
     const tree = h('ul', { class: 'tree' });
@@ -320,6 +330,8 @@
       s.kind === 'workflow' ? workflowView(s) :
       s.kind === 'sequence' ? sequenceView(s) :
       s.kind === 'new' ? newRequestView() :
+      s.kind === 'environment' ? environmentView() :
+      s.kind === 'history' ? historyView() :
       homeView();
     view.replaceChildren(content ?? homeView());
   }
@@ -665,6 +677,158 @@
       form);
   }
 
+  // --- Environment -------------------------------------------------------------------------------------------
+
+  /**
+   * The variables of the selected environment file, edited in place: each change rewrites only that variable's
+   * lines, so the file keeps its comments and order. Names that look like secrets are hidden until shown.
+   */
+  function environmentView() {
+    if (state.listing.environments.length === 0) {
+      return h('div', null,
+        h('h1', null, 'Environment'),
+        h('p', { class: 'lead' }, 'An environment file holds the values your requests use: the base URL, the credentials. This folder has none yet.'),
+        h('p', { class: 'aside' }, 'Create env.local.yaml in the folder (tinyprobe init does it for a project), with lines such as baseUrl: http://localhost:8080/. Keep files with credentials out of Git.'));
+    }
+    if (!state.environment) {
+      return h('div', null,
+        h('h1', null, 'Environment'),
+        h('p', { class: 'lead' }, 'Pick the environment at the top: its values go into every request and run.'));
+    }
+
+    const container = h('div', null, h('p', { class: 'aside' }, 'Reading the file…'));
+    const status = h('div', { 'aria-live': 'polite' });
+    const path = state.environment;
+    let content = null;
+
+    async function load() {
+      content = await text(`/api/file?${query({ root: state.root, path })}`).catch(() => null);
+      draw();
+    }
+
+    async function write(next, message) {
+      status.replaceChildren();
+      try {
+        await api('/api/environment', { root: state.root, path, text: next, basis: content });
+        content = next;
+        state.variables = envFile.parse(content).map(v => v.name);
+        renderSidebar();
+        draw();
+        showMessage(message, 'info');
+      } catch (e) {
+        if (e instanceof RestartError) return;
+        if (e.status === 409) {
+          await load();
+          status.append(h('div', { class: 'notice' }, 'The file changed on disk: it was read again. Make the change again.'));
+        } else {
+          status.append(h('div', { class: 'notice' }, e.message));
+        }
+      }
+    }
+
+    function draw() {
+      if (content === null) {
+        container.replaceChildren(h('div', { class: 'notice' }, `${path} cannot be read.`));
+        return;
+      }
+      const variables = envFile.parse(content);
+      const rows = variables.map(variable => {
+        const secret = envFile.isSecretName(variable.name);
+        const editable = variable.kind !== 'block';
+        const current = variable.kind === 'scalar' ? variable.value : variable.raw;
+        const save = () => {
+          if (input.value !== current) write(envFile.setValue(content, variable, input.value), `${variable.name} saved in ${baseName(path)}.`);
+        };
+        const input = h('input', {
+          class: 'input mono', id: `env-${variable.name}`, value: editable ? current : variable.value,
+          type: secret ? 'password' : 'text', autocomplete: 'off', spellcheck: 'false', disabled: !editable,
+          onkeydown: event => { if (event.key === 'Enter') { event.preventDefault(); save(); } }
+        });
+        return [
+          h('label', { for: `env-${variable.name}` }, variable.name),
+          h('div', { class: 'field' }, input,
+            secret ? h('button', { type: 'button', class: 'icon-button', title: 'Show or hide the value', 'aria-label': `Show or hide ${variable.name}`, onclick: () => { input.type = input.type === 'password' ? 'text' : 'password'; } }, '👁') : null,
+            editable ? h('button', { type: 'button', class: 'button small', onclick: save }, 'Save') : h('span', { class: 'default' }, 'edit it in the file'),
+            h('button', { type: 'button', class: 'icon-button', title: `Delete ${variable.name}`, 'aria-label': `Delete ${variable.name}`, onclick: () => {
+              if (confirm(`Delete ${variable.name} from ${baseName(path)}?`)) write(envFile.removeVariable(content, variable), `${variable.name} deleted.`);
+            } }, '✕'))
+        ];
+      });
+
+      const name = h('input', { class: 'input mono', id: 'env-new-name', placeholder: 'apiKey', autocomplete: 'off', spellcheck: 'false' });
+      const value = h('input', { class: 'input mono', id: 'env-new-value', placeholder: 'value', autocomplete: 'off', spellcheck: 'false' });
+      const add = h('form', { onsubmit: event => {
+        event.preventDefault();
+        status.replaceChildren();
+        const chosen = name.value.trim();
+        const problem = envFile.checkName(chosen, variables.map(v => v.name));
+        if (problem) return status.append(h('div', { class: 'notice' }, problem));
+        write(envFile.addVariable(content, chosen, value.value), `${chosen} added to ${baseName(path)}.`);
+      } },
+        h('h2', null, 'Add a variable'),
+        h('div', { class: 'form' },
+          h('label', { for: 'env-new-name' }, 'Name'), name,
+          h('label', { for: 'env-new-value' }, 'Value'), h('div', { class: 'field' }, value, h('button', { type: 'submit', class: 'button primary small' }, 'Add'))));
+
+      container.replaceChildren(
+        variables.length > 0 ? h('div', { class: 'form' }, rows.flat()) : h('p', { class: 'aside' }, 'No variables yet.'),
+        add);
+    }
+
+    queueMicrotask(load);
+    return h('div', null,
+      h('h1', null, 'Environment'),
+      h('div', { class: 'where' }, path),
+      h('p', { class: 'lead' }, 'Values are read like YAML: 42 is a number, true a boolean, "42" a string. A change is written to the file at once, its comments and order kept.'),
+      status,
+      container,
+      h('p', { class: 'aside' }, 'Names that look like secrets (password, token, apiKey…) are hidden until you show them. Keep files with credentials out of Git.'));
+  }
+
+  // --- History -----------------------------------------------------------------------------------------------
+
+  function historyView() {
+    const entries = state.history;
+    const timeOf = entry => new Date(entry.time).toLocaleString();
+    const argsOf = entry => (entry.args ?? []).map(([k, v]) => `${k}=${v}`).join(' ');
+    const findEndpoint = entry => state.model.apis.find(a => a.path === entry.file)?.endpoints.find(e => e.name === entry.endpoint) ?? null;
+
+    function show(entry) {
+      const { body } = panel(`${entry.method ?? ''} ${entry.endpoint}${argsOf(entry) ? `  ${argsOf(entry)}` : ''} · ${timeOf(entry)}`);
+      const view = runView.create(body);
+      view.reset(entry.endpoint, entry.environment);
+      for (const event of entry.events ?? []) view.apply(event);
+    }
+
+    function again(entry) {
+      const endpoint = findEndpoint(entry);
+      if (!endpoint) return showMessage(`${entry.endpoint} is no longer in ${entry.file}.`);
+      callEndpoint(entry.file, endpoint, Object.fromEntries(entry.args ?? []));
+    }
+
+    return h('div', null,
+      h('h1', null, 'History'),
+      h('p', { class: 'lead' }, `The last ${HISTORY_SIZE} requests sent from here, newest first. Click one to see its request and response again, or send it again with its values and the environment picked now.`),
+      entries.length === 0
+        ? h('p', { class: 'aside' }, 'Nothing yet: the requests you send from an endpoint appear here.')
+        : h('ol', { class: 'step-table' }, entries.map(entry => h('li', null,
+          h('span', { class: `verb verb-${entry.method}` }, entry.method ?? ''),
+          h('span', { class: 'step-label' },
+            h('button', { type: 'button', class: 'link', onclick: () => show(entry), title: 'Show the request and the response' }, entry.endpoint),
+            argsOf(entry) ? h('span', { class: 'step-kind' }, `  ${argsOf(entry)}`) : null,
+            h('div', { class: 'step-kind' }, `${timeOf(entry)} · ${entry.file}${entry.environment ? ` · ${baseName(entry.environment)}` : ''}`)),
+          h('span', { class: `code ${runView.statusClass(entry.status)}` }, entry.status ?? '---'),
+          h('span', { class: 'step-kind' }, runView.formatDuration(entry.duration_ms)),
+          h('button', { type: 'button', class: 'button small', onclick: () => again(entry), disabled: !findEndpoint(entry) }, 'Send again')))),
+      entries.length > 0 ? h('div', { class: 'actions' }, h('button', { type: 'button', class: 'button small', onclick: async () => {
+        if (!confirm('Clear the history of this folder? Its requests and responses are deleted.')) return;
+        state.history = [];
+        await api('/api/history', { root: state.root, entries: [] }).catch(() => {});
+        render();
+      } }, 'Clear history')) : null,
+      h('p', { class: 'aside' }, "The history is kept in the app's own folder on this computer, not in your project: requests and responses carry credentials. Bodies are cut at 64 KiB."));
+  }
+
   // --- Calls and runs --------------------------------------------------------------------------------------
 
   /** A result panel; closing it stops the request or the run. */
@@ -728,16 +892,29 @@
     const { body, signal } = panel(`${endpoint.method} ${endpoint.name}${shown ? `  ${shown}` : ''}`);
     const view = runView.create(body);
     view.reset(endpoint.name, state.environment);
-    let events = 0;
+    const events = [];
+    const root = state.root;
+    const environment = state.environment;
     try {
       const exit = await stream('/api/call', {
-        root: state.root, file, endpoint: endpoint.name, env: state.environment,
+        root, file, endpoint: endpoint.name, env: environment,
         with: Object.entries(values).map(([name, value]) => ({ name, value }))
-      }, event => { events++; view.apply(event); }, signal);
-      stopped(view, exit, events);
+      }, event => { events.push(event); view.apply(event); }, signal);
+      stopped(view, exit, events.length);
     } catch (e) {
       if (e.name !== 'AbortError' && !(e instanceof RestartError)) view.error(e.message);
     }
+    await record(root, { file, endpoint: endpoint.name, args: Object.entries(values), environment, events, time: Date.now() });
+  }
+
+  /** A call that sent a request goes into the folder's history; one stopped by invalid arguments does not. */
+  async function record(root, call) {
+    const entry = requestHistory.historyEntry(call);
+    if (!entry || root !== state.root) return;
+    state.history = requestHistory.addToHistory(state.history, entry, HISTORY_SIZE);
+    renderSidebar();
+    if (state.selection.kind === 'history') renderView();
+    await api('/api/history', { root, entries: state.history }).catch(() => {});
   }
 
   async function runWorkflow(workflow, to) {

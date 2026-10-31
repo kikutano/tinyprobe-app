@@ -278,6 +278,41 @@ public sealed class ApiTests : IDisposable
         Assert.Equal("This folder is not open in the app.", JsonDocument.Parse(notOpened.Body).RootElement.GetProperty("error").GetString());
     }
 
+    private string RootJson => Workspace.RealPath(_folder).Replace("\\", "\\\\");
+
+    [Fact]
+    public async Task AnEnvironment_IsWrittenOnlyFromWhatThePageRead()
+    {
+        var cookie = await Session();
+        var write = (string path, string text, string basis) => Send("POST", "/api/environment",
+            $$"""{"root":"{{RootJson}}","path":"{{path}}","text":{{JsonSerializer.Serialize(text)}},"basis":{{JsonSerializer.Serialize(basis)}}}""", cookie, Origin);
+
+        var saved = await write("env.yaml", "baseUrl: http://localhost:8080/\n", "baseUrl: http://localhost/\n");
+        var stale = await write("env.yaml", "x: 1\n", "baseUrl: http://localhost/\n");
+        var notEnvironment = await write("api.yaml", "x: 1\n", "");
+
+        Assert.Equal(200, saved.Status);
+        Assert.Equal("baseUrl: http://localhost:8080/\n", File.ReadAllText(Path.Combine(_folder, "env.yaml")));
+        Assert.Equal(409, stale.Status);
+        Assert.Equal(400, notEnvironment.Status);
+        Assert.False(File.Exists(Path.Combine(_folder, "api.yaml")));
+    }
+
+    [Fact]
+    public async Task TheHistory_IsKeptPerFolder_InTheAppsDataFolder()
+    {
+        var cookie = await Session();
+
+        Assert.Equal("[]", (await Send("GET", $"/api/history?root={Root}", null, cookie)).Body);
+        var write = await Send("POST", "/api/history", $$"""{"root":"{{RootJson}}","entries":[{"endpoint":"get_user","status":200}]}""", cookie, Origin);
+        var read = await Send("GET", $"/api/history?root={Root}", null, cookie);
+
+        Assert.Equal(200, write.Status);
+        Assert.Equal("""[{"endpoint":"get_user","status":200}]""", read.Body);
+        Assert.Single(Directory.GetFiles(Path.Combine(_data, "history")));
+        Assert.Empty(Directory.GetFiles(_folder, "*.json", SearchOption.AllDirectories));
+    }
+
     [Fact]
     public async Task TheInstanceRoute_NeedsTheSecretOfInstanceJson()
     {

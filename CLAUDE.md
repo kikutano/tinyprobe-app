@@ -27,7 +27,7 @@ browser ── web/ (HTML, JS, CSS; no framework, no build) ── HTTP on 127.0
 - `launcher/Http.cs`: a minimal HTTP/1.1 server on sockets (one request per connection, close-delimited streams).
 - `launcher/Api.cs`: the page's routes, the Host/Origin/cookie checks, streaming of tinyprobe's ndjson with a last `{"app":"exit"}` line.
 - `launcher/Sessions.cs`: one-time links that become an HttpOnly, SameSite=Strict cookie. `Workspace.cs`: files only inside opened folders (links resolved). `TinyprobeCli.cs`: which tinyprobe, and its download (system `curl` and `tar`, SHA256SUMS checked). `Desktop.cs`: browser and icons. `Config.cs`: settings. `Program.cs`: options, second start hand-over (`instance.json`), signals.
-- `web/app.js`: the page. `web/lib/core.js`: logic without a browser (ndjson lines, writing an endpoint as YAML text), tested by `test/*.test.js`. `web/shared/`: code shared with the VS Code extension (the run view); this repository has the canonical copy.
+- `web/app.js`: the page. `web/lib/core.js`: logic without a browser (ndjson lines, writing an endpoint as YAML text), tested by `test/*.test.js`. `web/shared/`: code shared with the VS Code extension (the run view, editing environment files, the request history); this repository has the canonical copy and its tests.
 
 ## Rules that are easy to break
 

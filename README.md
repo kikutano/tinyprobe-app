@@ -5,7 +5,7 @@
 Call your API and run your tests from the browser, with no terminal and no editor. tinyprobe-app is the visual side of [tinyprobe](https://github.com/kikutano/tinyprobe): it opens the folder of your API tests, lets you send any request from a form, runs workflows and shows every request and response.
 
 <p align="center">
-  <img src="media/screen.png" alt="tinyprobe-app: the endpoints and workflows of a folder on the left, a workflow with its steps and Run to here buttons, and the result of a run with its checks, request and response" width="900">
+  <img src="media/screen.png" alt="tinyprobe-app showing a workflow as a diagram after a run: twelve steps in order, the log-in sequence grouped, each step with its status and time, an orange line carrying the token saved by the log-in step down to every step that uses it, and a blue line carrying the id of the created user to the steps that update, read and delete it" width="900">
 </p>
 
 - **One small download.** A 3.5 MB program for Windows, macOS or Linux, with nothing else to install: no account, no cloud, no Node, no .NET.
@@ -59,6 +59,11 @@ In Chrome and Edge, **Install app** (in the address bar) gives tinyprobe its own
 - **Edit without YAML**: **+ New request** writes a new endpoint into an API file, or starts a new one; **Edit** changes an endpoint; **Auth sets** adds a bearer token, an API key, Basic or OAuth2 to an API file; **+ New workflow** starts a test, and its **Edit** view adds, changes, moves and deletes steps (the endpoint, its values, the expected status, checks on the response, the values to save). Only the changed part of the file is rewritten, and tinyprobe checks the file before it is kept, so a form never leaves a broken file. What the forms do not cover (`until`, `for_each`, sequences, schema checks) is edited as YAML, one block at a time. Editing needs tinyprobe 0.21.0 or newer.
 
 A request sent on its own remembers nothing for the next one. Values that go from one request to another are saved by a workflow, so every test says where its values come from and runs the same way everywhere.
+
+<p align="center">
+  <img src="media/run.png" alt="The result of a run up to step 5: the steps with their status and time, and for the selected step its checks, among them a JSON Schema check against the OpenAPI document, the response with its headers and body, and the request as sent" width="49%">
+  <img src="media/editor.png" alt="The form of a workflow step: the endpoint it calls, the values it sends, the expected status 201, three checks on the response body, and the user id it saves for the next steps" width="49%">
+</p>
 
 No tinyprobe files yet? Ask your coding agent to write them from your backend, a Postman collection or an OpenAPI document: the prompts are in the [tinyprobe README](https://github.com/kikutano/tinyprobe#generate-tests-with-a-coding-agent).
 

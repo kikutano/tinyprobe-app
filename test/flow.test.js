@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { flowModel } = require('../web/shared/flow.js');
+const { flowModel, valueLines, laneColumns, laneColors } = require('../web/shared/flow.js');
 
 // An inspect --json document as tinyprobe writes it, with the keys the flow reads.
 const inspect = {
@@ -33,7 +33,7 @@ test('a saved value is a lane from the step that saves it to the steps that use 
     ['token', 5, [6]]
   ]);
   assert.deepEqual(model.nodes[3].uses.map(u => u.name), ['userId', 'token']);
-  assert.deepEqual(model.nodes[1].saves, [{ name: 'userId', lane: 1 }]);
+  assert.deepEqual(model.nodes[1].saves, [{ name: 'userId', lane: 1, unused: false }]);
 });
 
 test('values from elsewhere are listed by where they come from', () => {
@@ -64,4 +64,61 @@ test('nodes describe the call, sleep, until and for_each', () => {
   assert.deepEqual([sleep.type, sleep.duration], ['sleep', 1000]);
   assert.deepEqual(read.until, { every: 500, timeout: 5000 });
   assert.equal(each.forEach, 2);
+});
+
+test('a value saved and never used afterwards is marked, and gets no line', () => {
+  const model = flowModel({
+    endpoints: [{ name: 'login', method: 'POST', path: '/login', query: [], params: [], arguments: [] }],
+    steps: [{ index: 0, type: 'call', name: 'Log in', call: 'login', with: {}, save: { token: '$.token' }, sequence: null, for_each: null, until: null }]
+  }, []);
+
+  assert.deepEqual(model.nodes[0].saves, [{ name: 'token', lane: 0, unused: true }]);
+  assert.equal(laneColumns(model.lanes).size, 0);
+});
+
+test('values wrap inside the node, uses and saves on lines of their own', () => {
+  const node = {
+    uses: ['token', 'userId', 'orderId', 'customerId', 'invoiceNumber'].map((name, lane) => ({ name, lane })),
+    saves: [{ name: 'receiptId', lane: 9, unused: true }]
+  };
+
+  const lines = valueLines(node, 40);
+
+  assert.deepEqual(lines.map(l => [l.label, l.items.map(i => i.text).join('')]), [
+    ['uses', ' ● token, ● userId, ● orderId,'],
+    ['', ' ● customerId, ● invoiceNumber'],
+    ['saves', ' ● receiptId (not used)']
+  ]);
+  assert.ok(lines.every(l => l.length <= 40));
+  assert.equal(lines[2].items[0].unused, true);
+});
+
+test('lanes share a column once the one before has ended', () => {
+  const lanes = [
+    { id: 0, from: 0, to: [1, 5] },
+    { id: 1, from: 1, to: [2] },
+    { id: 2, from: 3, to: [4] },
+    { id: 3, from: 4, to: [] },
+    { id: 4, from: 5, to: [6] }
+  ];
+
+  assert.deepEqual([...laneColumns(lanes)], [[0, 0], [1, 1], [2, 1], [4, 1]]);
+});
+
+test('lanes drawn at the same time never share a color', () => {
+  const lanes = [
+    { id: 0, from: 0, to: [6] },
+    { id: 1, from: 1, to: [4] },
+    { id: 2, from: 1, to: [4] },
+    { id: 3, from: 1, to: [4] },
+    { id: 4, from: 1, to: [4] },
+    { id: 5, from: 1, to: [4] },
+    { id: 6, from: 2, to: [5] },
+    { id: 7, from: 5, to: [6] }
+  ];
+  const colors = laneColors(lanes, laneColumns(lanes));
+
+  assert.deepEqual([0, 1, 2, 3, 4, 5].map(id => colors.get(id)), [0, 1, 2, 3, 4, 5]);
+  assert.equal(new Set([0, 1, 2, 3, 4, 5, 6].map(id => colors.get(id))).size, 7);
+  assert.notEqual(colors.get(7), colors.get(0));
 });

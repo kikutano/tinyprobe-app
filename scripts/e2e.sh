@@ -74,6 +74,13 @@ printf '%s\n' "$FOLDER" | json "sorted({f['inspect']['kind'] for f in d['files']
   | grep -q "\['api', 'sequence', 'workflow'\] True \['environment.yaml'\]" || fail "folder: $(echo "$FOLDER" | head -c 300)"
 ok "$(printf '%s\n' "$FOLDER" | json "len(d['files'])") tinyprobe files, all valid, with their kinds"
 
+curl -s -b "$JAR" "$BASE/api/folder?root=$(q "$ROOT")&stream=1" > "$WORK/stream.ndjson"
+[ "$(wc -l < "$WORK/stream.ndjson")" = 1 ] && head -c 12 "$WORK/stream.ndjson" | grep -q '{"listing":' || fail "an unchanged folder was read again: $(head -c 200 "$WORK/stream.ndjson")"
+touch "$ROOT/example/workflows/users.yaml"
+curl -s -b "$JAR" "$BASE/api/folder?root=$(q "$ROOT")&stream=1" > "$WORK/stream.ndjson"
+head -1 "$WORK/stream.ndjson" | grep -q '^{"total":1}$' && tail -1 "$WORK/stream.ndjson" | grep -q '^{"listing":' || fail "a changed workflow: $(head -c 200 "$WORK/stream.ndjson")"
+ok "progress as the folder is read; only what changed is read again"
+
 echo "Call and runs"
 post /api/call "{\"root\":\"$ROOT\",\"file\":\"example/api/testserver.yaml\",\"endpoint\":\"status\",\"with\":[{\"name\":\"code\",\"value\":\"404\"}],\"env\":\"environment.yaml\"}" > "$WORK/call.ndjson"
 grep -q '"status":404' "$WORK/call.ndjson" && grep -q '"app":"exit","code":0' "$WORK/call.ndjson" || fail "call: $(cat "$WORK/call.ndjson")"

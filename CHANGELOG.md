@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.2
+
+- **Opening a large folder shows how far it is**: "Reading the tinyprobe files with tinyprobe: 72 of 163", with a progress bar, instead of a page that looks stuck. Reading it again later (when the page comes back after an edit) shows a thin bar at the top and leaves the view as it is.
+- **Only what changed is read again**: the app remembers what each file was read from (itself, its imports, the sequences it uses). An unchanged folder answers at once (22 ms instead of 0.8 s for 163 workflows), a changed workflow reads only that file, and a changed API file reads the workflows that import it.
+
 ## 0.4.1
 
 - **A request is not a test**: sending an endpoint (and opening a request of the History) shows its HTTP status, `401 Unauthorized` in orange, `200 OK` in green, instead of `PASSED`, and no longer shows "1/1 steps passed · 0 checks": just the request and the response. A request that cannot be sent says so instead of "The workflow is not valid".

@@ -138,9 +138,13 @@
 
   async function loadListing() {
     if (!state.root || !state.info?.tinyprobe) return;
+    // The first time a folder is opened its view is a progress screen; later readings only show the thin bar.
+    const first = !state.model || state.listing?.root !== state.root;
+    progress({ done: 0, total: null, first });
     try {
-      state.listing = await api(`/api/folder?${query({ root: state.root })}`);
+      state.listing = await readFolder(step => progress({ ...step, first }));
     } catch (e) {
+      progress(null);
       if (e instanceof RestartError) return;
       state.listing = null;
       state.model = null;
@@ -150,12 +154,70 @@
       showMessage(`The folder could not be read: ${e.message}`);
       return;
     }
+    progress(null);
     state.model = model(state.listing);
     if (state.environment && !state.listing.environments.includes(state.environment)) state.environment = null;
     // One environment file: nothing to choose.
     if (!state.environment && state.listing.environments.length === 1 && recall(`env:${state.root}`, undefined) === undefined) state.environment = state.listing.environments[0];
     await loadVariables();
     render();
+  }
+
+  /** Reads the folder through the launcher's stream: `{"total"}`, a `{"done"}` per file, then `{"listing"}`. */
+  async function readFolder(onProgress) {
+    const response = await fetch(`/api/folder?${query({ root: state.root, stream: '1' })}`);
+    if (response.status === 401) {
+      showRestart();
+      throw new RestartError('restart');
+    }
+    if (!response.ok) {
+      const json = await response.json().catch(() => null);
+      throw new Error(json?.error ?? `The app answered ${response.status}.`);
+    }
+    let total = null;
+    let listing = null;
+    const lines = new core.LineSplitter(line => {
+      const event = JSON.parse(line);
+      if (event.total !== undefined) total = event.total;
+      if (event.listing) listing = event.listing;
+      else onProgress({ done: event.done ?? 0, total });
+    });
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      lines.push(decoder.decode(value, { stream: true }));
+    }
+    lines.push(decoder.decode());
+    lines.end();
+    if (!listing) throw new Error('The folder could not be read to the end.');
+    return listing;
+  }
+
+  /** The bar under the top bar while a folder is read, and on the first reading a view that says how far it is. */
+  function progress(step) {
+    state.loading = step;
+    const bar = $('progress');
+    bar.hidden = !step;
+    if (!step) return;
+    const known = step.total !== null && step.total !== undefined && step.total > 0;
+    bar.classList.toggle('indeterminate', !known);
+    bar.firstElementChild.style.width = known ? `${Math.round((step.done / step.total) * 100)}%` : '';
+    bar.setAttribute('aria-valuenow', known ? String(step.done) : '');
+    bar.setAttribute('aria-valuemax', known ? String(step.total) : '');
+    if (step.first) {
+      $('view').replaceChildren(h('div', { class: 'welcome loading' },
+        h('h1', null, `Opening ${baseName(state.root)}`),
+        h('p', { class: 'lead' }, known
+          ? `Reading the tinyprobe files with tinyprobe: ${step.done} of ${step.total}.`
+          : 'Looking for the tinyprobe files of the folder…'),
+        h('div', { class: 'progress-large' }, h('div', { class: 'progress-fill', style: null })),
+        h('p', { class: 'aside' }, 'Each file is checked by tinyprobe, imports included: a large folder takes a few seconds the first time. After that, only the files that changed, and those that import them, are read again.')));
+      const large = $('view').querySelector('.progress-large');
+      large.classList.toggle('indeterminate', !known);
+      large.firstElementChild.style.width = known ? `${Math.round((step.done / step.total) * 100)}%` : '';
+    }
   }
 
   async function loadVariables() {

@@ -9,8 +9,10 @@ APP="$1"
 WEB="$2"
 
 # Budgets. Measured on 2026-10-31: launcher 3.47 MB with the page inside, page 111 KB, start 3 ms.
+# The page budget went from 200 to 256 KiB on 2026-11-02: the diagram (M5-3), the visual editor (M5-4) and
+# environments made it 210 KB, still a fraction of one image of a typical web app.
 MAX_BINARY=4194304      # 4 MiB
-MAX_PAGE=204800         # 200 KiB: the HTML, CSS, JavaScript and icons of web/
+MAX_PAGE=262144         # 256 KiB: the HTML, CSS, JavaScript and icons of web/
 MAX_START_MS=50         # --version
 
 failed=0

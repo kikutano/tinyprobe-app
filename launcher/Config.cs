@@ -56,6 +56,14 @@ internal sealed class Config
     /// <summary>offer (not asked yet), created or declined.</summary>
     public string Shortcut { get; private set; } = "offer";
 
+    /// <summary>Whether the app asks GitHub, at most once a day, for the latest versions of itself and tinyprobe.</summary>
+    public bool CheckUpdates { get; private set; } = true;
+
+    /// <summary>The latest releases found, and when (UTC, ISO 8601); empty when never checked.</summary>
+    public string LatestApp { get; private set; } = "";
+    public string LatestTinyprobe { get; private set; } = "";
+    public string CheckedAt { get; private set; } = "";
+
     public IReadOnlyList<string> Folders
     {
         get { lock (_lock) return [.. _folders]; }
@@ -70,6 +78,10 @@ internal sealed class Config
             var root = document.RootElement;
             if (root.TryGetProperty("port", out var port) && port.TryGetInt32(out var number) && number is > 0 and < 65536) config.Port = number;
             if (root.TryGetProperty("shortcut", out var shortcut) && shortcut.GetString() is { } value) config.Shortcut = value;
+            if (root.TryGetProperty("check_updates", out var check) && check.ValueKind is JsonValueKind.True or JsonValueKind.False) config.CheckUpdates = check.GetBoolean();
+            config.LatestApp = Json.String(root, "latest_app") ?? "";
+            config.LatestTinyprobe = Json.String(root, "latest_tinyprobe") ?? "";
+            config.CheckedAt = Json.String(root, "checked_at") ?? "";
             if (root.TryGetProperty("folders", out var folders) && folders.ValueKind == JsonValueKind.Array)
                 foreach (var folder in folders.EnumerateArray())
                     if (folder.GetString() is { Length: > 0 } path) config._folders.Add(path);
@@ -84,6 +96,23 @@ internal sealed class Config
     public void SetPort(int port)
     {
         lock (_lock) Port = port;
+        Save();
+    }
+
+    public void SetCheckUpdates(bool value)
+    {
+        lock (_lock) CheckUpdates = value;
+        Save();
+    }
+
+    public void SetLatest(string app, string tinyprobe, string checkedAt)
+    {
+        lock (_lock)
+        {
+            LatestApp = app;
+            LatestTinyprobe = tinyprobe;
+            CheckedAt = checkedAt;
+        }
         Save();
     }
 
@@ -126,6 +155,10 @@ internal sealed class Config
                 w.WriteStartObject();
                 w.WriteNumber("port", Port);
                 w.WriteString("shortcut", Shortcut);
+                w.WriteBoolean("check_updates", CheckUpdates);
+                w.WriteString("latest_app", LatestApp);
+                w.WriteString("latest_tinyprobe", LatestTinyprobe);
+                w.WriteString("checked_at", CheckedAt);
                 w.WriteStartArray("folders");
                 foreach (var folder in _folders) w.WriteStringValue(folder);
                 w.WriteEndArray();

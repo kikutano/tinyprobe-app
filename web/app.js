@@ -52,6 +52,9 @@
 
   const $ = id => document.getElementById(id);
 
+  /** The children worth adding: replaceChildren would write a null as the text "null". */
+  const nodes = (...children) => children.flat().filter(child => child !== null && child !== undefined && child !== false);
+
   function remember(key, value) {
     try {
       localStorage.setItem(`tinyprobe:${key}`, JSON.stringify(value));
@@ -116,6 +119,8 @@
     const known = state.info.folders.filter(f => f.exists).map(f => f.path);
     const wanted = [fromLink, recall('root', null), known[0]].find(path => path && known.includes(path));
     renderChrome();
+    renderVersions();
+    checkUpdates();
     if (state.info.tinyprobe && wanted) await openRoot(wanted);
     else render();
   }
@@ -203,6 +208,7 @@
     folderButton.title = state.root ?? '';
     $('refresh').hidden = !ready;
     $('env-label').hidden = !ready;
+    $('env-add').hidden = !ready;
     $('shell').classList.toggle('no-sidebar', !ready);
     if (ready) {
       const select = $('env');
@@ -1305,7 +1311,10 @@
 
     queueMicrotask(load);
     return h('div', null,
-      h('h1', null, 'Environment'),
+      h('div', { class: 'title-row' }, h('h1', null, 'Environment'), h('span', { class: 'spacer' }),
+        h('div', { class: 'title-actions' },
+          h('button', { type: 'button', class: 'button small', onclick: () => openNewEnvironment(path) }, 'Duplicate'),
+          h('button', { type: 'button', class: 'button small', onclick: () => openNewEnvironment() }, 'New'))),
       h('div', { class: 'where' }, path),
       h('p', { class: 'lead' }, 'Values are read like YAML: 42 is a number, true a boolean, "42" a string. A change is written to the file at once, its comments and order kept.'),
       status,
@@ -1532,7 +1541,7 @@
         return;
       }
       const recent = state.info.folders.filter(f => f.exists && f.path !== state.root);
-      body.replaceChildren(
+      body.replaceChildren(...nodes(
         recent.length > 0 ? h('div', { class: 'group' },
           h('div', { class: 'group-title' }, h('span', null, 'Recent')),
           h('ul', { class: 'recent' }, recent.map(f => h('li', null,
@@ -1548,7 +1557,7 @@
             h('button', { type: 'button', class: 'item', onclick: () => show(f.path), ondblclick: () => choose(f.path) },
               h('span', { class: 'mark' }, '📁'), h('span', { class: 'label' }, f.name),
               f.tinyprobe ? h('span', { class: 'badge-tests' }, 'tinyprobe/') : null)))),
-        h('p', { class: 'aside' }, 'A folder with a tinyprobe/ folder opens on its tests.'));
+        h('p', { class: 'aside' }, 'A folder with a tinyprobe/ folder opens on its tests.')));
     }
     async function choose(path) {
       try {
@@ -1572,21 +1581,8 @@
     const info = state.info;
     const cli = info?.tinyprobe;
     const output = h('pre', { class: 'body', hidden: true });
-    const update = cli?.source === 'app' ? h('button', { type: 'button', class: 'button small', onclick: async () => {
-      update.disabled = true;
-      output.hidden = false;
-      output.textContent = 'Updating tinyprobe…';
-      try {
-        const result = await api('/api/tinyprobe/update', {});
-        output.textContent = result.output || (result.code === 0 ? 'Up to date.' : `tinyprobe update stopped with exit code ${result.code}.`);
-        state.info = await api('/api/state');
-      } catch (e) {
-        output.textContent = e.message;
-      } finally {
-        update.disabled = false;
-      }
-    } }, 'Update tinyprobe') : null;
-    body.replaceChildren(
+    body.replaceChildren(...nodes(
+      updatesSection(output),
       h('dl', { class: 'pairs-settings' },
         h('dt', null, 'App'), h('dd', null, `tinyprobe-app ${info?.app ?? ''}`),
         h('dt', null, 'tinyprobe'), h('dd', null, cli ? `${cli.version}` : `not installed (${info?.minimum} or newer is needed)`),
@@ -1594,11 +1590,126 @@
         cli ? h('dt', null, 'Source') : null,
         cli ? h('dd', null, { path: 'your installation (on the PATH): update it as you installed it', app: "the app's own copy", env: 'TINYPROBE_PATH' }[cli.source] ?? cli.source) : null),
       info?.problem ? h('p', { class: 'aside' }, info.problem) : null,
-      h('div', { class: 'actions' }, update,
+      h('div', { class: 'actions' },
         info?.icon !== 'unsupported' ? h('button', { type: 'button', class: 'button small', onclick: () => icon('create') }, info?.icon === 'created' ? 'Add the icon again' : 'Add the tinyprobe icon') : null),
       output,
-      h('p', { class: 'aside' }, 'The app runs on this computer only (127.0.0.1). Requests and responses, Authorization headers included, are shown here and are not sent anywhere else.'));
+      h('p', { class: 'aside' }, 'The app runs on this computer only (127.0.0.1). Requests and responses, Authorization headers included, are shown here and are not sent anywhere else. The only other request is the check for new versions, which asks GitHub for the latest release and sends nothing.')));
     dialog.showModal();
+  }
+
+  // --- Versions and updates ---------------------------------------------------------------------------------
+
+  async function checkUpdates(now = false) {
+    try {
+      state.updates = await api(`/api/updates${now ? '?now=1' : ''}`);
+    } catch {
+      state.updates = null;
+    }
+    renderVersions();
+  }
+
+  /** The versions next to the name, and a notice when the app or tinyprobe is behind, or the editor needs 0.21. */
+  function renderVersions() {
+    const info = state.info;
+    const u = state.updates;
+    const cli = info?.tinyprobe;
+    $('versions').textContent = info ? `app ${info.app}${cli ? ` · tinyprobe ${cli.version}` : ''}` : '';
+    const reasons = [
+      u?.app_outdated ? `app ${u.latest_app}` : null,
+      u?.tinyprobe_outdated ? `tinyprobe ${u.latest_tinyprobe}` : null,
+      cli && !info.editing ? 'the visual editor needs tinyprobe 0.21' : null
+    ].filter(Boolean);
+    const badge = $('update-badge');
+    badge.hidden = reasons.length === 0;
+    badge.textContent = '↑ Update';
+    badge.title = `New: ${reasons.join(', ')}. Click for how to update.`;
+  }
+
+  function updatesSection(output) {
+    const u = state.updates;
+    const cli = state.info?.tinyprobe;
+    const line = (label, current, latest, outdated, how) => h('div', { class: 'version-row' },
+      h('span', null, h('strong', null, label), ` ${current ?? 'not installed'}`),
+      latest ? h('span', { class: outdated ? 'version-new' : 'aside' }, outdated ? `${latest} is out` : 'up to date') : null,
+      outdated ? how : null);
+    const updateCli = cli?.source === 'app' ? h('button', { type: 'button', class: 'button small', onclick: async event => {
+      event.target.disabled = true;
+      output.hidden = false;
+      output.textContent = 'Updating tinyprobe…';
+      try {
+        const result = await api('/api/tinyprobe/update', {});
+        output.textContent = result.output || 'Up to date.';
+        state.info = await api('/api/state');
+        await checkUpdates();
+        render();
+      } catch (e) {
+        output.textContent = e.message;
+      }
+    } }, 'Update tinyprobe') : h('code', null, 'tinyprobe update');
+    return h('div', { class: 'versions-section' },
+      line('tinyprobe-app', state.info?.app, u?.latest_app, u?.app_outdated,
+        h('span', { class: 'aside' }, 'Run the install command again: ', h('code', null, 'curl -fsSL https://raw.githubusercontent.com/kikutano/tinyprobe-app/main/install.sh | sh'))),
+      line('tinyprobe', cli?.version, u?.latest_tinyprobe, u?.tinyprobe_outdated || (cli && !state.info.editing), updateCli),
+      cli && !state.info.editing ? h('p', { class: 'aside' }, 'The visual editor (Edit, YAML, Auth sets, New workflow) needs tinyprobe 0.21.0 or newer.') : null,
+      h('label', { class: 'check', for: 'check-updates' },
+        h('input', { type: 'checkbox', id: 'check-updates', checked: u?.check ?? true, onchange: async event => {
+          state.updates = await api('/api/updates', { check: event.target.checked }).catch(() => state.updates);
+          renderVersions();
+        } }),
+        ' Check GitHub for new versions once a day'),
+      h('div', { class: 'actions' }, h('button', { type: 'button', class: 'button small', onclick: async () => { await checkUpdates(true); openSettings(); } }, 'Check now'),
+        u?.checked_at ? h('span', { class: 'aside' }, `Last checked ${new Date(u.checked_at).toLocaleString()}`) : null));
+  }
+
+  // --- New environment ---------------------------------------------------------------------------------------
+
+  /** A new environment file next to the others: empty, or a copy of one to change only some values. */
+  function openNewEnvironment(copyOf = null) {
+    const dialog = $('env-dialog');
+    const status = h('div', { 'aria-live': 'polite' });
+    const name = h('input', { class: 'input mono', id: 'env-new-file', placeholder: 'staging', autocomplete: 'off', spellcheck: 'false' });
+    const from = h('select', { class: 'select', id: 'env-new-from' },
+      h('option', { value: '' }, 'Empty'),
+      state.listing.environments.map(path => h('option', { value: path, selected: path === copyOf }, `A copy of ${path}`)));
+    const fileName = () => {
+      const slug = name.value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      return slug ? `env.${slug}.yaml` : null;
+    };
+    const preview = h('div', { class: 'hint' }, 'The file: env.<name>.yaml, in the folder.');
+    name.addEventListener('input', () => { preview.textContent = fileName() ? `The file: ${fileName()}` : 'The file: env.<name>.yaml, in the folder.'; });
+    $('env-dialog-title').textContent = copyOf ? `Duplicate ${baseName(copyOf)}` : 'New environment';
+    $('env-dialog-body').replaceChildren(h('form', { onsubmit: async event => {
+      event.preventDefault();
+      status.replaceChildren();
+      const path = fileName();
+      if (!path) return status.append(h('div', { class: 'notice' }, 'Give the environment a name, e.g. staging'));
+      if (state.listing.environments.includes(path) || state.listing.files.some(f => f.path === path)) return status.append(h('div', { class: 'notice' }, `${path} already exists.`));
+      let content = `# The values of the requests for ${name.value.trim()}. Keep files with credentials out of Git.\nbaseUrl: http://localhost:8080/\n`;
+      if (from.value) {
+        content = await text(`/api/file?${query({ root: state.root, path: from.value })}`).catch(() => null);
+        if (content === null) return status.append(h('div', { class: 'notice' }, `${from.value} cannot be read.`));
+      }
+      try {
+        await api('/api/environment', { root: state.root, path, text: content, basis: null, create: true });
+      } catch (e) {
+        if (!(e instanceof RestartError)) status.append(h('div', { class: 'notice' }, e.message));
+        return;
+      }
+      dialog.close();
+      state.environment = path;
+      remember(`env:${state.root}`, path);
+      await loadListing();
+      select({ kind: 'environment' });
+      showMessage(`Created ${path}${from.value ? ` from ${from.value}` : ''}: change the values that differ.`, 'info');
+    } },
+      h('div', { class: 'form' },
+        h('label', { for: 'env-new-file' }, 'Name'), name, preview,
+        h('label', { for: 'env-new-from' }, 'Start from'), from),
+      h('p', { class: 'aside' }, 'A copy keeps every value and comment of the original: change only what differs, such as baseUrl.'),
+      h('div', { class: 'actions' }, h('button', { type: 'submit', class: 'button primary' }, 'Create')),
+      status));
+    dialog.showModal();
+    name.focus();
   }
 
   // --- Messages --------------------------------------------------------------------------------------------
@@ -1626,6 +1737,8 @@
 
   $('folder-button').addEventListener('click', () => openFolderDialog());
   $('settings-button').addEventListener('click', openSettings);
+  $('update-badge').addEventListener('click', openSettings);
+  $('env-add').addEventListener('click', () => openNewEnvironment());
   $('refresh').addEventListener('click', () => loadListing());
   $('env').addEventListener('change', async event => {
     state.environment = event.target.value || null;

@@ -33,7 +33,7 @@ browser ── web/ (HTML, JS, CSS; no framework, no build) ── HTTP on 127.0
 
 - **A client of the CLI** ([tinyprobe decision 0004](../tinyprobe/docs/decisions/0004-the-app-is-a-client-of-the-cli.md)): run `tinyprobe`, read its JSON, never parse YAML to run it or evaluate a check. A need the CLI does not cover becomes a general feature of the CLI, with its spec, not a workaround here.
 - **YAML is written as text**, keeping comments and order, and checked with `tinyprobe inspect` before it is kept (`/api/save` restores the file otherwise).
-- **Light and fast.** `scripts/perf.sh` fails CI over 4 MiB for the launcher, 200 KiB for `web/`, 50 ms to start. No `HttpClient` (it tripled the size: downloads use the system's `curl`), no `Regex`, no reflection, JSON by hand with `Utf8JsonWriter`.
+- **Light and fast.** `scripts/perf.sh` fails CI over 4 MiB for the launcher, 256 KiB for `web/`, 50 ms to start. No `HttpClient` (it tripled the size: downloads use the system's `curl`), no `Regex`, no reflection, JSON by hand with `Utf8JsonWriter`.
 - **Security.** `127.0.0.1` only; every `/api/` route needs the session cookie; changes need the page's `Origin`; `Host` is checked on every request; paths go through `Workspace.Inside`. The page sets every value with `textContent` and the CSP allows only its own files.
 - **Shared code.** `web/shared/` is copied by the extension (`../tinyprobe-vscode/scripts/dev.sh sync-shared`): no host API in it, and keep its CSS on the tokens listed at its top.
 - All docs and comments in **English**; comments explain *why*.

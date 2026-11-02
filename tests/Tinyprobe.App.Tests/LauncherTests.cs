@@ -299,6 +299,23 @@ public sealed class ApiTests : IDisposable
     }
 
     [Fact]
+    public async Task ANewEnvironment_IsCreated_OnlyIfItDoesNotExist()
+    {
+        var cookie = await Session();
+        var create = (string path) => Send("POST", "/api/environment",
+            $$"""{"root":"{{RootJson}}","path":"{{path}}","text":"baseUrl: https://staging/\n","basis":null,"create":true}""", cookie, Origin);
+
+        var created = await create("env.staging.yaml");
+        var again = await create("env.staging.yaml");
+        var existing = await create("env.yaml");
+
+        Assert.Equal(200, created.Status);
+        Assert.Equal("baseUrl: https://staging/\n", File.ReadAllText(Path.Combine(_folder, "env.staging.yaml")));
+        Assert.Equal((409, 409), (again.Status, existing.Status));
+        Assert.Equal("baseUrl: http://localhost/\n", File.ReadAllText(Path.Combine(_folder, "env.yaml")));
+    }
+
+    [Fact]
     public async Task TheHistory_IsKeptPerFolder_InTheAppsDataFolder()
     {
         var cookie = await Session();

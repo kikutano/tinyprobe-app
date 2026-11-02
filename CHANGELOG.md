@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+
+- **New environments**: **+** next to the environment creates `env.<name>.yaml`, empty or as a copy of another one, so that a staging environment changes only the values that differ. **Duplicate** in the Environment view does the same from the one on screen.
+- **Versions and updates**: the versions of the app and of tinyprobe are next to the name; **↑ Update** appears when a newer one is out, or when the visual editor needs a newer tinyprobe, and Settings says how to update each. The app asks GitHub for the latest releases at most once a day, sending nothing else; Settings turns it off.
+- **The install command updates the app's own tinyprobe** too, so a copy downloaded by an older app gets the visual editor.
+- Settings and the folder picker no longer show a stray `null`.
+
 ## 0.3.2
 
 The diagram of a workflow with many values:

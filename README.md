@@ -111,4 +111,8 @@ The end-to-end checks need `tinyprobe` and the tinyprobe repository next to this
 
 ## License
 
-MIT. See [License.md](License.md).
+Copyright (C) 2026 Gaetano Luigi Lenoci
+
+tinyprobe-app is free software: you can use, change and share it under the terms of the [GNU General Public License, version 3](LICENSE) (GPL-3.0-only). A changed version may be shared, even for a fee, only under the same license and together with its source code.
+
+Releases up to 0.4.4 were published under the MIT License, which still applies to them.

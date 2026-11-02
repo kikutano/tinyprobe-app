@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **License: GPL-3.0.** From this version tinyprobe-app is licensed under the GNU General Public License, version 3 (GPL-3.0-only): it stays free and open source, and a changed version can be shared only under the same license, with its source code. Releases up to 0.4.4 stay under the MIT License.
+
 ## 0.4.4
 
 - **The outcome of the last run next to Run**: "✓ 12/12 passed" in green, or "✗ 11/12 passed · 1 failed" in red, counted live while the workflow runs; after **Run to here** it says "up to step N". Its tooltip gives the time, the checks and the requests.

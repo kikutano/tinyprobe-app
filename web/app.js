@@ -670,6 +670,7 @@
       workflow.inspect.description ? h('p', { class: 'lead' }, workflow.inspect.description) : null,
       h('div', { class: 'actions' },
         h('button', { type: 'button', class: 'button primary', onclick: () => runWorkflow(workflow) }, '▶ Run'),
+        outcomeBadge(workflow.path),
         h('span', { class: 'spacer' }),
         h('div', { class: 'segmented', role: 'group', 'aria-label': 'Show the steps as' },
           h('button', { type: 'button', class: `button small${mode === 'diagram' ? ' active' : ''}`, 'aria-pressed': String(mode === 'diagram'), onclick: () => toggle('diagram') }, 'Diagram'),
@@ -677,6 +678,37 @@
           state.info.editing ? h('button', { type: 'button', class: `button small${mode === 'edit' ? ' active' : ''}`, 'aria-pressed': String(mode === 'edit'), onclick: () => toggle('edit') }, 'Edit') : null)),
       content,
       mode === 'list' ? h('p', { class: 'aside' }, 'Run to here runs the steps before it again each time: nothing is kept between runs.') : null);
+  }
+
+  /**
+   * The last run of a workflow at a glance, next to Run: "✓ 12/12 passed", "✗ 11/12 passed · 1 failed", or how far
+   * a run is while it goes. Counts are tinyprobe's: each item of a for_each is a step.
+   */
+  function outcomeBadge(path) {
+    const node = h('span', { class: 'run-outcome', id: 'run-outcome', 'data-path': path, 'aria-live': 'polite' });
+    fillOutcome(node, path);
+    return node;
+  }
+
+  function fillOutcome(node, path) {
+    const events = state.runs.get(path) ?? [];
+    const started = events.find(e => e.event === 'run_started');
+    const finished = events.find(e => e.event === 'run_finished');
+    node.className = 'run-outcome';
+    node.hidden = !started;
+    if (!started) return node.replaceChildren();
+    const upTo = started.to !== null && started.to !== undefined ? ` up to step ${started.to + 1}` : '';
+    if (!finished) {
+      const done = events.filter(e => e.event === 'step_completed').length;
+      node.classList.add('running');
+      node.title = 'Running';
+      return node.replaceChildren(`● ${done}/${(started.steps ?? []).length}${upTo}`);
+    }
+    const s = finished.summary;
+    const parts = [`${s.passed_steps}/${s.total_steps} passed`, s.failed_steps ? `${s.failed_steps} failed` : null, s.not_run_steps ? `${s.not_run_steps} not run` : null].filter(Boolean);
+    node.classList.add(finished.success ? 'passed' : 'failed');
+    node.title = `Last run${upTo}: ${runView.formatDuration(s.duration_ms)}, ${s.checks_passed + s.checks_failed} checks, ${s.http_requests} requests`;
+    node.replaceChildren(`${finished.success ? '✓' : '✗'} ${parts.join(' · ')}${upTo}`);
   }
 
   /** How each step went in a run, from its events: the same states as the diagram. */
@@ -1574,7 +1606,9 @@
         // The diagram lights up as the run goes, and again when the workflow is opened later.
         recorded.push(event);
         if (state.flow?.path === workflow.path) state.flow.diagram.apply(event);
-        // The list view follows the run too.
+        // The badge next to Run follows the run, and so does the list view.
+        const badge = $('run-outcome');
+        if (badge?.dataset.path === workflow.path) fillOutcome(badge, workflow.path);
         if (state.selection.kind === 'workflow' && state.selection.file === workflow.path && recall('workflow-view', 'diagram') === 'list') renderView();
         if (event.event === 'run_finished' && !to) {
           state.outcomes.set(workflow.path, event.success);

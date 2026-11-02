@@ -40,5 +40,5 @@
 .lane-7 { --lane: var(--lane-8, #8a6d3b); }
 .flow-lane-text { fill: var(--lane); font-weight: 600; }
 
-.flow-inputs { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 10px; color: var(--muted); font-size: 0.9em; }
+.flow-inputs { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 16px 0 6px; color: var(--muted); font-size: 0.9em; }
 .flow-inputs span code { color: var(--fg); }

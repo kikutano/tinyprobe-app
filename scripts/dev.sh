@@ -10,7 +10,8 @@
 #   e2e       aot, then scripts/e2e.sh: the launcher on tinyprobe's docs/example, against its test server.
 #   perf      aot, then the size and start-up budgets of CI (scripts/perf.sh).
 #   check     build + test + e2e + perf: run it before opening a pull request.
-#   run       aot, then start the app on your machine (data in .dev/data, so your own settings stay untouched).
+#   run       aot, then start the app on your machine (data in .dev/data, so your own settings stay untouched):
+#             scripts/dev.sh run [folder] [--port <n>]
 #
 # Environment variables:
 #   TINYPROBE_PATH       the tinyprobe binary (default: tinyprobe on the PATH)
@@ -111,6 +112,7 @@ case "${1:-}" in
   perf) aot; perf ;;
   check) build; unit_tests; aot; e2e; perf; step "All checks passed" ;;
   run)
+    shift
     aot
     mkdir -p "$ROOT/.dev/data"
     TINYPROBE_APP_DATA="$ROOT/.dev/data" "$ROOT/publish/tinyprobe-app" "$@"

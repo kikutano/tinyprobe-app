@@ -166,16 +166,12 @@
   // --- Drawing -------------------------------------------------------------------------------------------------
 
   const NODE_X = 8;
-  const NODE_W = 470;
-  const LINE = 17;
-  /** The width of a character of the 12px text, to wrap values and shorten names inside a node. */
-  const CHAR = 7.2;
-  /** The vertical distance between the arrows that reach the same node. */
-  const PORT = 8;
-  const LANE_GAP = 26;
-  const LANE_START = 30;
-  const GAP = 14;
-  const GROUP_LABEL = 22;
+  const NODE_W = 600;
+  const LINE = 20;
+  /** The width of a character of the 13.5px text, to wrap values and shorten names inside a node. */
+  const CHAR = 7.9;
+  const GAP = 16;
+  const GROUP_LABEL = 26;
   const LANE_COLORS = 8;
 
   function svg(tag, attributes, text) {
@@ -245,11 +241,12 @@
 
     function draw() {
       const nodes = model.nodes;
-      const columns = laneColumns(model.lanes);
-      const colors = laneColors(model.lanes, columns);
-      const maxChars = Math.floor((NODE_W - 34 - 14) / CHAR);
+      // Values are colored, the same color where a value is saved and where it is used: no lines between steps,
+      // "uses" and "saves" say it, and the color matches them at a glance.
+      const colors = laneColors(model.lanes, laneColumns(model.lanes));
+      const maxChars = Math.floor((NODE_W - 40 - 16) / CHAR);
       const lines = nodes.map(n => (n.type === 'call' ? valueLines(n, maxChars) : []));
-      const heights = lines.map(l => (l.length > 0 ? 44 + LINE * l.length + 8 : 52));
+      const heights = lines.map(l => (l.length > 0 ? 54 + LINE * l.length + 8 : 62));
       const tops = [];
       let y = 6;
       nodes.forEach((node, i) => {
@@ -257,34 +254,10 @@
         tops.push(y);
         y += heights[i] + GAP;
       });
-      const columnCount = Math.max(0, ...columns.values()) + 1;
-      const width = NODE_X + NODE_W + LANE_START + Math.max(columnCount, 1) * LANE_GAP + 8;
+      const width = NODE_X + NODE_W + 16;
       const height = Math.max(y, 40);
 
-      // Where each lane meets each node: the lanes of a node are spread along its side, by column, so their
-      // arrows neither cover nor cross each other.
-      const ports = nodes.map(() => []);
-      for (const lane of model.lanes) {
-        if (!columns.has(lane.id)) continue;
-        ports[lane.from].push(lane.id);
-        for (const to of lane.to) ports[to].push(lane.id);
-      }
-      const portY = (i, laneId) => {
-        const list = [...new Set(ports[i])].sort((a, b) => columns.get(a) - columns.get(b));
-        const k = list.indexOf(laneId);
-        return tops[i] + heights[i] / 2 + (k - (list.length - 1) / 2) * PORT;
-      };
-
       const picture = svg('svg', { viewBox: `0 0 ${width} ${height}`, width, height, class: 'flow-svg', role: 'list', 'aria-label': 'The steps of the workflow and the values they pass on' });
-      picture.style.maxWidth = `${width}px`;
-
-      const defs = svg('defs');
-      for (let c = 0; c < LANE_COLORS; c++) {
-        const marker = svg('marker', { id: `flow-arrow-${c}`, viewBox: '0 0 8 8', refX: 7, refY: 4, markerWidth: 6, markerHeight: 6, orient: 'auto-start-reverse' });
-        marker.append(svg('path', { d: 'M0,0 L8,4 L0,8 z', class: `flow-lane-fill lane-${c}` }));
-        defs.append(marker);
-      }
-      picture.append(defs);
 
       // The groups of a sequence's steps, behind them.
       let start = null;
@@ -294,29 +267,10 @@
         if (ends) {
           const top = tops[start] - GROUP_LABEL + 2;
           picture.append(svg('rect', { x: 1, y: top, width: NODE_W + 14, height: tops[i] + heights[i] - top + 7, rx: 10, class: 'flow-group' }));
-          picture.append(svg('text', { x: 12, y: top + 15, class: 'flow-group-label' }, `use ${node.sequence}`));
+          picture.append(svg('text', { x: 12, y: top + 17, class: 'flow-group-label' }, `use ${node.sequence}`));
           start = null;
         }
       });
-
-      // The lanes: from the step that saves a value down to the last step that uses it.
-      for (const lane of model.lanes) {
-        if (!columns.has(lane.id)) continue;
-        const x = NODE_X + NODE_W + LANE_START + columns.get(lane.id) * LANE_GAP;
-        const color = colors.get(lane.id);
-        const from = portY(lane.from, lane.id);
-        const last = portY(lane.to[lane.to.length - 1], lane.id);
-        const group = svg('g', { class: `flow-lane lane-${color}` });
-        group.append(svg('title', null, `${lane.name}: saved by step ${lane.from + 1}, used by ${lane.to.map(t => t + 1).join(', ')}`));
-        group.append(svg('line', { x1: NODE_X + NODE_W, y1: from, x2: x, y2: from, class: 'flow-lane-line' }));
-        group.append(svg('line', { x1: x, y1: from, x2: x, y2: last, class: 'flow-lane-line' }));
-        group.append(svg('circle', { cx: NODE_X + NODE_W, cy: from, r: 3.5, class: 'flow-lane-fill' }));
-        for (const to of lane.to) {
-          const at = portY(to, lane.id);
-          group.append(svg('line', { x1: x, y1: at, x2: NODE_X + NODE_W + 2, y2: at, class: 'flow-lane-line', 'marker-end': `url(#flow-arrow-${color})` }));
-        }
-        picture.append(group);
-      }
 
       nodes.forEach((node, i) => picture.append(drawNode(node, i, tops[i], heights[i], lines[i], colors)));
       root.replaceChildren(picture);
@@ -334,7 +288,7 @@
 
       group.append(svg('rect', { x: NODE_X, y: top, width: NODE_W, height, rx: 8, class: 'flow-box' }));
       const icon = { pending: '○', running: '●', passed: '✓', failed: '✗', skipped: '–' }[state.status] ?? '○';
-      group.append(svg('text', { x: NODE_X + 14, y: top + 21, class: 'flow-icon' }, icon));
+      group.append(svg('text', { x: NODE_X + 14, y: top + 25, class: 'flow-icon' }, icon));
 
       // Badges at the right of the first line: polling, items, progress, duration. The name takes what is left.
       const badges = [];
@@ -344,21 +298,21 @@
       }
       if (state.result) badges.push(`${state.result.status ?? '---'} · ${duration(state.result.duration_ms)}`);
       const badgeText = badges.join('   ');
-      if (badges.length > 0) group.append(svg('text', { x: NODE_X + NODE_W - 12, y: top + 21, 'text-anchor': 'end', class: 'flow-badge' }, badgeText));
-      const nameChars = Math.max(12, Math.floor((NODE_W - 34 - 24 - badgeText.length * 6.6) / 7.8));
-      group.append(svg('text', { x: NODE_X + 34, y: top + 21, class: 'flow-name' }, shorten(`${i + 1}. ${node.name}`, nameChars)));
+      if (badges.length > 0) group.append(svg('text', { x: NODE_X + NODE_W - 14, y: top + 25, 'text-anchor': 'end', class: 'flow-badge' }, badgeText));
+      const nameChars = Math.max(12, Math.floor((NODE_W - 40 - 28 - badgeText.length * 7.2) / 8.8));
+      group.append(svg('text', { x: NODE_X + 40, y: top + 25, class: 'flow-name' }, shorten(`${i + 1}. ${node.name}`, nameChars)));
 
       const detail = node.type === 'sleep' ? `wait ${duration(node.duration)}`
         : node.type === 'call' ? `${node.method ?? ''} ${node.path ?? ''}  ·  ${node.call}`
         : node.type;
-      group.append(svg('text', { x: NODE_X + 34, y: top + 39, class: 'flow-detail' }, shorten(detail, 64)));
+      group.append(svg('text', { x: NODE_X + 40, y: top + 47, class: 'flow-detail' }, shorten(detail, Math.floor((NODE_W - 56) / 7.9))));
 
       // One text per line: SVG does not wrap. A continued line is indented under the first value.
       valueLines_.forEach((line, n) => {
-        const text = svg('text', { x: NODE_X + 34 + (line.label ? 0 : (line.length - line.items.reduce((sum, item) => sum + item.text.length, 0)) * CHAR), y: top + 57 + n * LINE, class: 'flow-values' });
+        const text = svg('text', { x: NODE_X + 40 + (line.label ? 0 : (line.length - line.items.reduce((sum, item) => sum + item.text.length, 0)) * CHAR), y: top + 69 + n * LINE, class: 'flow-values' });
         if (line.label) text.append(svg('tspan', { class: 'flow-values-label' }, line.label));
         for (const item of line.items) {
-          text.append(svg('tspan', { class: item.unused ? 'flow-values-label' : `flow-lane-text lane-${colors.get(item.lane) ?? 0}` }, item.text));
+          text.append(svg('tspan', { class: item.unused ? 'flow-values-unused' : `flow-lane-text lane-${colors.get(item.lane) ?? 0}` }, item.text));
         }
         group.append(text);
       });

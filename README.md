@@ -59,7 +59,7 @@ In Chrome and Edge, **Install app** (in the address bar) gives tinyprobe its own
 - **Send a request**: pick an endpoint, fill in its values and click **Send**. You see the status, the time, the response with its headers, and the request exactly as it was sent.
 - **Run workflows**: a workflow is a test: steps that call endpoints, check the answers and pass values (a token, an id) from one step to the next. **Run** runs it, **Run to here** runs it up to a step and shows that step's response, **Run all workflows** runs the folder.
 - **See how a workflow works**: its steps as a diagram, with a colored line for each value a step saves (a token, an id) down to the steps that use it, and what comes from the environment. It lights up as the workflow runs; click a step to see what it sends, checks and saves.
-- **Pick and edit the environment**: the env file (`env.local.yaml`, `env.staging.yaml`...) with the base URL and the credentials. **Environment** lists its variables: change a value, add or delete one, and the file is rewritten line by line, its comments and order kept. Values whose name looks like a secret are hidden until you show them.
+- **Pick and edit the environment**: the env file (`env.local.yaml`, `env.staging.yaml`...) with the base URL and the credentials. **+** next to it creates a new one, empty or as a copy of another, so that a staging environment changes only its `baseUrl`. **Environment** lists its variables: change a value, add or delete one, and the file is rewritten line by line, its comments and order kept. Values whose name looks like a secret are hidden until you show them.
 - **Look back**: **History** keeps the last 50 requests you sent, with their responses. Open one again, or send it again with the environment picked now. It is kept in the app's folder on your computer, not in your project, since requests carry credentials.
 - **Edit without YAML**: **+ New request** writes a new endpoint into an API file, or starts a new one; **Edit** changes an endpoint; **Auth sets** adds a bearer token, an API key, Basic or OAuth2 to an API file; **+ New workflow** starts a test, and its **Edit** view adds, changes, moves and deletes steps (the endpoint, its values, the expected status, checks on the response, the values to save). Only the changed part of the file is rewritten, and tinyprobe checks the file before it is kept, so a form never leaves a broken file. What the forms do not cover (`until`, `for_each`, sequences, schema checks) is edited as YAML, one block at a time. Editing needs tinyprobe 0.21.0 or newer.
 
@@ -74,7 +74,7 @@ No tinyprobe files yet? Ask your coding agent to write them from your backend, a
 
 ## Which tinyprobe it uses
 
-The app needs tinyprobe 0.20.0 or newer. It uses the `tinyprobe` you installed yourself when it is new enough, otherwise its own copy, which it downloads from the [tinyprobe releases](https://github.com/kikutano/tinyprobe/releases) and updates from **Settings**. A tinyprobe on your `PATH` is yours to update (`tinyprobe update`).
+The versions of the app and of tinyprobe are next to the name, and **↑ Update** appears when a newer one is out. The app needs tinyprobe 0.20.0 or newer, and its visual editor 0.21.0. It uses the `tinyprobe` you installed yourself when it is new enough, otherwise its own copy, which it downloads from the [tinyprobe releases](https://github.com/kikutano/tinyprobe/releases) and updates from **Settings**. A tinyprobe on your `PATH` is yours to update (`tinyprobe update`). Running the install command again updates the app and its own tinyprobe.
 
 ## Security
 
@@ -85,7 +85,7 @@ The app sends requests with the credentials of your environment files and writes
 - requests that do not come from the app's own page, or that name another host, are refused;
 - it reads and writes files only inside the folders you opened.
 
-Requests and responses are shown as they were sent, `Authorization` headers included. They stay in your browser: the app sends nothing anywhere except your own requests and, when you ask, the download of tinyprobe.
+Requests and responses are shown as they were sent, `Authorization` headers included. They stay in your browser: the app sends nothing anywhere except your own requests, the download of tinyprobe when you ask, and, once a day, a request to GitHub for the latest release of the app and of tinyprobe, which sends nothing about you (turn it off in **Settings**).
 
 The app's settings are in `%LOCALAPPDATA%\tinyprobe-app` on Windows, `~/Library/Application Support/tinyprobe-app` on macOS and `~/.local/share/tinyprobe-app` on Linux.
 

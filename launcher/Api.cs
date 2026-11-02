@@ -97,6 +97,8 @@ internal sealed class Api
             case ("POST", "/api/call"): await Call(request, response, gone); break;
             case ("POST", "/api/run"): await Run(request, response, gone); break;
             case ("POST", "/api/icon"): await Icon(request, response); break;
+            case ("GET", "/api/updates"): await Updates(request, response, gone); break;
+            case ("POST", "/api/updates"): await SetUpdates(request, response); break;
             default: await response.Json(404, Json.Error($"No route {request.Method} {request.Path}.")); break;
         }
     }
@@ -480,9 +482,11 @@ internal sealed class Api
         if (await FileOf(root, relative, response) is not { } file) return;
         var basis = Json.String(json, "basis");
         var previous = File.Exists(file) ? await File.ReadAllTextAsync(file, gone) : null;
-        if (previous is null || previous != basis)
+        // A new environment file must not exist yet; an existing one must still be the text the page read.
+        var create = json.TryGetProperty("create", out var c) && c.ValueKind == JsonValueKind.True;
+        if (create ? previous is not null : previous is null || previous != basis)
         {
-            await response.Json(409, Json.Error("The file changed on disk since it was read."));
+            await response.Json(409, Json.Error(create ? $"{relative} already exists." : "The file changed on disk since it was read."));
             return;
         }
         await File.WriteAllTextAsync(file, Json.String(json, "text") ?? "", new UTF8Encoding(false), gone);
@@ -631,6 +635,73 @@ internal sealed class Api
             w.WriteEndObject();
         });
         await output.WriteAsync(end.Concat("\n"u8.ToArray()).ToArray(), CancellationToken.None);
+    }
+
+    // --- Updates -----------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The latest releases of the app and of tinyprobe, asked of GitHub at most once a day, and only when the
+    /// user has not turned it off: the address that `releases/latest` redirects to names the tag. Nothing is sent
+    /// but that request.
+    /// </summary>
+    private async Task Updates(HttpRequest request, HttpResponse response, CancellationToken gone)
+    {
+        var force = request.Query.GetValueOrDefault("now") == "1";
+        var stale = !DateTime.TryParse(_config.CheckedAt, null, System.Globalization.DateTimeStyles.RoundtripKind, out var at) || DateTime.UtcNow - at > TimeSpan.FromDays(1);
+        if (_config.CheckUpdates && (stale || force))
+        {
+            var app = await LatestRelease("kikutano/tinyprobe-app", gone);
+            var tinyprobe = await LatestRelease("kikutano/tinyprobe", gone);
+            if (app is not null || tinyprobe is not null)
+                _config.SetLatest(app ?? _config.LatestApp, tinyprobe ?? _config.LatestTinyprobe, DateTime.UtcNow.ToString("o"));
+        }
+        await response.Json(200, UpdatesJson());
+    }
+
+    private async Task SetUpdates(HttpRequest request, HttpResponse response)
+    {
+        using var body = Parse(request);
+        if (body is not null && body.RootElement.TryGetProperty("check", out var check) && check.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            _config.SetCheckUpdates(check.GetBoolean());
+        await response.Json(200, UpdatesJson());
+    }
+
+    private byte[] UpdatesJson() => Json.Write(w =>
+    {
+        w.WriteStartObject();
+        w.WriteBoolean("check", _config.CheckUpdates);
+        w.WriteString("checked_at", _config.CheckedAt);
+        w.WriteString("app", Version);
+        w.WriteString("latest_app", _config.LatestApp);
+        w.WriteBoolean("app_outdated", _config.LatestApp.Length > 0 && !TinyprobeCli.AtLeast(Version, _config.LatestApp));
+        var cli = _cli.Current;
+        w.WriteString("tinyprobe", cli?.Version);
+        w.WriteString("tinyprobe_source", cli?.Source);
+        w.WriteString("latest_tinyprobe", _config.LatestTinyprobe);
+        // A development build (TINYPROBE_PATH) is never reported as old.
+        w.WriteBoolean("tinyprobe_outdated", cli is { Source: not "env" } && _config.LatestTinyprobe.Length > 0 && !TinyprobeCli.AtLeast(cli.Version, _config.LatestTinyprobe));
+        w.WriteEndObject();
+    });
+
+    /// <summary>The version of the latest release of a repository, from where GitHub redirects, or null.</summary>
+    private static async Task<string?> LatestRelease(string repository, CancellationToken gone)
+    {
+        try
+        {
+            var (code, output, _) = await TinyprobeCli.Run("curl", ["-sI", "--max-time", "5", $"https://github.com/{repository}/releases/latest"], Path.GetTempPath(), gone);
+            if (code != 0) return null;
+            foreach (var line in output.Split('\n'))
+            {
+                if (!line.StartsWith("location:", StringComparison.OrdinalIgnoreCase)) continue;
+                var tag = line.Trim()[(line.Trim().LastIndexOf('/') + 1)..];
+                return tag.StartsWith('v') ? tag[1..] : null;
+            }
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            // No curl: no update check.
+        }
+        return null;
     }
 
     // --- Icon --------------------------------------------------------------------------------------------------

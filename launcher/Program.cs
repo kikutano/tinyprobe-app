@@ -127,6 +127,12 @@ static async Task<int> Install(AppPaths paths, Config config)
         Console.WriteLine(cli.Problem is { } problem ? $"  {problem}" : $"  tinyprobe {TinyprobeCli.Minimum} or newer is not installed; downloading the latest release");
         if (await cli.Download(CancellationToken.None) is { } downloadError) return Fail(downloadError);
     }
+    else if (cli.Current is { Source: "app" })
+    {
+        // Installing again updates the app: its own tinyprobe follows, so new features of the app work.
+        var (_, output) = await cli.UpdateOwnCopy(CancellationToken.None);
+        if (output.Length > 0) Console.WriteLine($"  {output.Split('\n')[0]}");
+    }
     var current = cli.Current!;
     Console.WriteLine($"  tinyprobe: {current.Version} ({(current.Source == "app" ? "the app's own copy" : current.Path)})");
     Console.WriteLine();

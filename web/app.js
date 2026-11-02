@@ -1333,7 +1333,7 @@
     function show(entry) {
       const { body } = panel(`${entry.method ?? ''} ${entry.endpoint}${argsOf(entry) ? `  ${argsOf(entry)}` : ''} · ${timeOf(entry)}`);
       const view = runView.create(body);
-      view.reset(entry.endpoint, entry.environment);
+      view.reset(entry.endpoint, entry.environment, { call: true });
       for (const event of entry.events ?? []) view.apply(event);
     }
 
@@ -1431,7 +1431,7 @@
     const shown = Object.entries(values).map(([k, v]) => `${k}=${v}`).join(' ');
     const { body, signal } = panel(`${endpoint.method} ${endpoint.name}${shown ? `  ${shown}` : ''}`);
     const view = runView.create(body);
-    view.reset(endpoint.name, state.environment);
+    view.reset(endpoint.name, state.environment, { call: true });
     const events = [];
     const root = state.root;
     const environment = state.environment;

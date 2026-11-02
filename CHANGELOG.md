@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.1
+
+- **A request is not a test**: sending an endpoint (and opening a request of the History) shows its HTTP status, `401 Unauthorized` in orange, `200 OK` in green, instead of `PASSED`, and no longer shows "1/1 steps passed · 0 checks": just the request and the response. A request that cannot be sent says so instead of "The workflow is not valid".
+
 ## 0.4.0
 
 - **New environments**: **+** next to the environment creates `env.<name>.yaml`, empty or as a copy of another one, so that a staging environment changes only the values that differ. **Duplicate** in the Environment view does the same from the one on screen.

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.4
+
+- **The outcome of the last run next to Run**: "✓ 12/12 passed" in green, or "✗ 11/12 passed · 1 failed" in red, counted live while the workflow runs; after **Run to here** it says "up to step N". Its tooltip gives the time, the checks and the requests.
+- More space above and below the Run row of a workflow.
+
 ## 0.4.3
 
 - **The diagram without lines**: a workflow is a column of steps, and each value is colored the same where it is saved and where it is used. **uses** and **saves** are in bold.

@@ -5,12 +5,12 @@
 Call your API and run your tests from the browser, with no terminal and no editor. tinyprobe-app is the visual side of [tinyprobe](https://github.com/kikutano/tinyprobe): it opens the folder of your API tests, lets you send any request from a form, runs workflows and shows every request and response.
 
 <p align="center">
-  <img src="media/screen.png" alt="tinyprobe-app showing a workflow as a diagram after a run: twelve steps in order, the log-in sequence grouped, each step with its status and time, an orange line carrying the token saved by the log-in step down to every step that uses it, and a blue line carrying the id of the created user to the steps that update, read and delete it" width="900">
+  <img src="media/screen.png" alt="tinyprobe-app showing a workflow as a diagram after a run: twelve steps in order, the log-in sequence grouped, each step with its status and time and the values it uses and saves, the token in orange from the log-in step to every step that uses it, the id of the created user in blue" width="900">
 </p>
 
 <p align="center">
-  <img src="media/flow-run.gif" alt="A workflow's diagram lighting up as it runs: each step turns green in turn, the items of a for_each step count up to 3 of 3, and the lines carry the token and the list of users to the steps that use them" width="51%">
-  <img src="media/flow-until.gif" alt="A workflow that waits for a report: the step with until counts its attempts while it polls, then turns green, and the line carries the report id from the step that started it" width="47%">
+  <img src="media/flow-run.gif" alt="A workflow's diagram lighting up as it runs: each step turns green in turn, the items of a for_each step count up, and the token and the list of users are colored the same where they are saved and where they are used" width="51%">
+  <img src="media/flow-until.gif" alt="A workflow that waits for a report: the step with until counts its attempts while it polls, then turns green; the report id is saved by the first step and used by the second" width="47%">
 </p>
 
 - **One small download.** A 3.5 MB program for Windows, macOS or Linux, with nothing else to install: no account, no cloud, no Node, no .NET.
@@ -66,7 +66,7 @@ In Chrome and Edge, **Install app** (in the address bar) gives tinyprobe its own
 A request sent on its own remembers nothing for the next one. Values that go from one request to another are saved by a workflow, so every test says where its values come from and runs the same way everywhere.
 
 <p align="center">
-  <img src="media/run.png" alt="The result of a run up to step 5: the steps with their status and time, and for the selected step its checks, among them a JSON Schema check against the OpenAPI document, the response with its headers and body, and the request as sent" width="49%">
+  <img src="media/run.png" alt="The result of a run up to step 5: the steps with their status and time, and for the selected step its checks, among them a JSON Schema check against the OpenAPI document, then the request as sent and the response with its headers and body" width="49%">
   <img src="media/editor.png" alt="The form of a workflow step: the endpoint it calls, the values it sends, the expected status 201, three checks on the response body, and the user id it saves for the next steps" width="49%">
 </p>
 

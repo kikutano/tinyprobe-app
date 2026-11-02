@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.1
+
+From the first days of use on a real project.
+
+- **The sidebar folds**: API, Workflows and Sequences open and close, and so does each API file, with its number of endpoints. A file opens by itself when it holds what is selected; the app remembers the rest for each folder.
+- **A click on a step of the diagram goes to it**: after a run, the result selects that step and scrolls to its request and response; before, to what the step sends and checks.
+- **Request, then response**: a step's detail shows what was sent before what came back.
+- **Saved values are folded**: their names show (`Saved  token, userId`), their values on a click.
+- **Each view shows its own results**: the result of a workflow stays with that workflow, the result of a request with that endpoint; switching to another one no longer shows the previous results, and coming back shows them again.
+
 ## 0.3.0
 
 - **The visual editor**: edit an endpoint, add and edit auth sets (bearer token, API key header, Basic, OAuth2 client credentials), create a workflow with its first step, and add, edit, move and delete its steps: the endpoint, its values, the expected status, checks on the response (equals, >, contains, is one of, matches, exists...) and the values to save. Every form shows what is written, rewrites only its block of the file, and keeps the change only if tinyprobe accepts the file. What the forms do not show is edited as YAML, one block at a time. It reads files with `tinyprobe inspect --source` (tinyprobe 0.21.0).

@@ -263,18 +263,22 @@
       if (r.failure) node.append(element('div', 'failure', `✗ ${r.failure}`));
       if ((r.assertions ?? []).length > 0) node.append(checks(r.assertions));
 
+      // Saved values (a token, an id) are rarely what one looks at: their names show, the values on demand.
       const saved = Object.entries(r.saved ?? {});
       if (saved.length > 0) {
-        node.append(element('h3', null, 'Saved'));
-        node.append(table(saved.map(([name, value]) => [name, JSON.stringify(value)])));
+        const values = element('details', 'exchange saved');
+        values.append(element('summary', null, `Saved  ${saved.map(([name]) => name).join(', ')}`));
+        values.append(table(saved.map(([name, value]) => [name, JSON.stringify(value)])));
+        node.append(values);
       }
 
+      // What was sent first, then what came back.
+      if (r.request) {
+        node.append(section(`Request  ${r.request.method} ${r.request.url}`, r.request.headers, prettyBody(r.request.body), null));
+      }
       if (r.response) {
         node.append(section(`Response  ${r.response.status} ${r.response.reason ?? ''}`, r.response.headers,
           prettyBody(r.response.body), r.response.body_truncated ? 'The body was cut at 1 MiB.' : null));
-      }
-      if (r.request) {
-        node.append(section(`Request  ${r.request.method} ${r.request.url}`, r.request.headers, prettyBody(r.request.body), null));
       }
       return node;
     }
@@ -312,7 +316,13 @@
     }
 
     reset('', null);
-    return { reset, apply, error };
+    /** Shows a step (or one item of a for_each step), as a click on its row does. */
+    function select(index, iteration = null) {
+      selected = key(index, iteration);
+      render();
+    }
+
+    return { reset, apply, error, select };
   }
 
   globalThis.tinyprobeRunView = { create: createRunView, formatDuration, statusClass };

@@ -26,6 +26,8 @@
     history: [],
     // The events of the last run of each workflow, to light its diagram up again; the diagram on screen.
     runs: new Map(),
+    // The result panel of the last run of each workflow, where a click on the diagram shows a step.
+    runViews: new Map(),
     flow: null
   };
 
@@ -250,10 +252,19 @@
       h('li', null, item({ mark: '⚙', label: state.environment ? `Environment: ${baseName(state.environment)}` : 'Environment', selected: selected.kind === 'environment', onclick: () => select({ kind: 'environment' }) })),
       h('li', null, item({ mark: '↺', label: state.history.length > 0 ? `History (${state.history.length})` : 'History', selected: selected.kind === 'history', onclick: () => select({ kind: 'history' }) })))));
 
-    const apiGroup = h('div', { class: 'group' }, h('div', { class: 'group-title' }, h('span', null, 'API')));
-    const tree = h('ul', { class: 'tree' });
+    const endpointCount = m.apis.reduce((sum, file) => sum + file.endpoints.length, 0);
+    const apiOpen = isOpen('api', true);
+    const apiGroup = h('div', { class: 'group' }, groupTitle('api', 'API', endpointCount, true));
+    const tree = h('ul', { class: 'tree', hidden: !apiOpen });
     for (const file of m.apis) {
-      tree.append(h('li', { class: 'file' }, file.workflow ? `${file.path} (workflow)` : file.path));
+      // A file is open when it holds what is selected, or when it is the only one.
+      const holds = selected.file === file.path;
+      const fileOpen = isOpen(`file:${file.path}`, holds || m.apis.length === 1);
+      tree.append(h('li', null, h('button', {
+        type: 'button', class: 'file', 'aria-expanded': String(fileOpen), title: file.path,
+        onclick: () => toggleOpen(`file:${file.path}`, holds || m.apis.length === 1)
+      }, h('span', { class: 'chevron' }, fileOpen ? '▾' : '▸'), h('span', { class: 'label' }, file.workflow ? `${file.path} (workflow)` : file.path), h('span', { class: 'group-count' }, file.endpoints.length))));
+      if (!fileOpen) continue;
       for (const endpoint of file.endpoints) {
         tree.append(h('li', null, item({
           verb: endpoint.method,
@@ -275,7 +286,7 @@
       for (const workflow of m.workflows) {
         const outcome = state.outcomes.get(workflow.path);
         list.append(h('li', null, item({
-          mark: outcome === true ? '✓' : outcome === false ? '✗' : '▸',
+          mark: outcome === true ? '✓' : outcome === false ? '✗' : '○',
           markClass: outcome === true ? 'passed' : outcome === false ? 'failed' : '',
           label: workflow.name,
           title: workflow.path,
@@ -284,7 +295,8 @@
         })));
       }
       if (state.info.editing) list.append(h('li', null, item({ label: '+ New workflow', className: 'add', selected: selected.kind === 'new-workflow', onclick: () => select({ kind: 'new-workflow' }) })));
-      groups.push(h('div', { class: 'group' }, h('div', { class: 'group-title' }, h('span', null, 'Workflows')), list));
+      list.hidden = !isOpen('workflows', true);
+      groups.push(h('div', { class: 'group' }, groupTitle('workflows', 'Workflows', m.workflows.length, true), list));
     }
 
     if (m.sequences.length > 0) {
@@ -296,7 +308,8 @@
           onclick: () => select({ kind: 'sequence', file: sequence.path })
         })));
       }
-      groups.push(h('div', { class: 'group' }, h('div', { class: 'group-title' }, h('span', null, 'Sequences')), list));
+      list.hidden = !isOpen('sequences', true);
+      groups.push(h('div', { class: 'group' }, groupTitle('sequences', 'Sequences', m.sequences.length, true), list));
     }
 
     if (m.invalid.length > 0) {
@@ -315,10 +328,39 @@
     sidebar.replaceChildren(...groups);
   }
 
+  /** Whether a group of the sidebar is open, remembered for each folder. */
+  function isOpen(id, fallback) {
+    return recall(`open:${state.root}:${id}`, fallback);
+  }
+
+  function toggleOpen(id, fallback) {
+    remember(`open:${state.root}:${id}`, !isOpen(id, fallback));
+    renderSidebar();
+  }
+
+  function groupTitle(id, label, count, fallback) {
+    const open = isOpen(id, fallback);
+    return h('button', { type: 'button', class: 'group-title group-toggle', 'aria-expanded': String(open), onclick: () => toggleOpen(id, fallback) },
+      h('span', null, `${open ? '▾' : '▸'} ${label}`), h('span', { class: 'group-count' }, count));
+  }
+
   function item({ label, verb, mark, markClass, title, selected, onclick, className }) {
     return h('button', { type: 'button', class: `item${selected ? ' selected' : ''}${className ? ` ${className}` : ''}`, title: title ?? label, onclick, 'aria-current': selected ? 'true' : null },
       verb ? h('span', { class: `verb verb-${verb}` }, verb) : mark ? h('span', { class: `mark ${markClass ?? ''}` }, mark) : null,
       h('span', { class: 'label' }, label));
+  }
+
+  /** The view a result belongs to: a workflow, an endpoint, the overview, the history. */
+  function ownerOf(selection) {
+    return `${selection.kind}:${selection.file ?? ''}:${selection.name ?? ''}`;
+  }
+
+  /** Only the results of the view on screen are shown; the others come back with their view. */
+  function showOwnResults() {
+    const owner = ownerOf(state.selection);
+    for (const node of $('results').children) {
+      if (node.dataset.owner) node.hidden = node.dataset.owner !== owner;
+    }
   }
 
   function select(selection) {
@@ -348,6 +390,7 @@
       s.kind === 'history' ? historyView() :
       homeView();
     view.replaceChildren(content ?? homeView());
+    showOwnResults();
   }
 
   // --- tinyprobe missing -----------------------------------------------------------------------------------
@@ -554,6 +597,9 @@
   /** What a step of the diagram sends, checks and saves, with its result in the last run. */
   function showStep(workflow, step, diagram, details) {
     if (!step) return details.replaceChildren();
+    // After a run, the step's request and response; before, what it sends and checks.
+    const last = state.runViews.get(workflow.path);
+    const ran = last && last.node.isConnected && diagram.state(diagram.selected)?.result;
     const result = diagram.state(diagram.selected)?.result;
     const checks = [...(step.expect?.checks ?? [])];
     const withValues = Object.entries(step.with ?? {});
@@ -576,7 +622,11 @@
         result ? h('div', null, h('h2', null, 'Last run'),
           h('div', { class: result.success ? '' : 'error-text' }, `${result.success ? 'Passed' : 'Failed'} · status ${result.status ?? 'none'} · ${runView.formatDuration(result.duration_ms)}${result.failure ? ` · ${result.failure}` : ''}`),
           h('div', { class: 'aside' }, 'Its request and response are in the result below.')) : null)));
+    // Selecting re-renders the result, so its detail is looked up after.
+    if (ran) last.view.select(step.index);
+    requestAnimationFrame(() => (ran ? last.node.querySelector('.details') ?? last.node : details).scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
+
 
   function sequenceView({ file }) {
     const sequence = state.model.sequences.find(s => s.path === file);
@@ -1313,15 +1363,18 @@
   function panel(title) {
     const controller = new AbortController();
     const body = h('div', { class: 'panel-body' });
-    const node = h('article', { class: 'panel' },
+    const owner = ownerOf(state.selection);
+    const node = h('article', { class: 'panel', 'data-owner': owner },
       h('div', { class: 'panel-head' },
         h('span', { class: 'what' }, title),
         h('span', { class: 'when' }, new Date().toLocaleTimeString()),
         h('button', { type: 'button', class: 'icon-button', 'aria-label': 'Close and stop', title: 'Close (stops it if it is running)', onclick: () => { controller.abort(); node.remove(); } }, '✕')),
       body);
     $('results').prepend(node);
-    // At most a few panels: older results go, as in a terminal's scrollback.
-    while ($('results').children.length > 8) $('results').lastElementChild.remove();
+    // At most a few results per view: older ones go, as in a terminal's scrollback.
+    const own = [...$('results').children].filter(n => n.dataset.owner === owner);
+    for (const old of own.slice(5)) old.remove();
+    showOwnResults();
     return { node, body, signal: controller.signal };
   }
 
@@ -1396,9 +1449,10 @@
   }
 
   async function runWorkflow(workflow, to) {
-    const { body, signal } = panel(to ? `${workflow.name}, up to step ${to}` : workflow.name);
+    const { node, body, signal } = panel(to ? `${workflow.name}, up to step ${to}` : workflow.name);
     const view = runView.create(body);
     view.reset(workflow.name, state.environment);
+    state.runViews.set(workflow.path, { view, node });
     let events = 0;
     const recorded = [];
     state.runs.set(workflow.path, recorded);

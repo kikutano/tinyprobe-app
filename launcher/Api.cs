@@ -322,12 +322,39 @@ internal sealed class Api
     }
 
     /// <summary>The folder's tinyprobe files with their `inspect --json`, and its environment files.</summary>
+    // The last listing of each folder, with the signature of its YAML files: an unchanged folder is sent at once.
+    private readonly Dictionary<string, (string Signature, byte[] Listing)> _listings = new(StringComparer.Ordinal);
+
+    // The last `inspect` of each file, with the time of change of every file it was read from (itself, its imports,
+    // the sequences it uses): a change reads again only the files that depend on it.
+    private readonly Dictionary<string, (string Output, Dictionary<string, long> Stamps)> _inspected = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The folder's tinyprobe files with their `inspect --json`, and its environment files. With `stream=1` the
+    /// answer is ndjson: `{"total": n}`, a `{"done": k}` as each file is read, then `{"listing": ...}`, so the page
+    /// shows how far it is on a large folder. When no YAML file changed since the last time, the last listing is
+    /// sent at once.
+    /// </summary>
     private async Task Folder(HttpRequest request, HttpResponse response, CancellationToken gone)
     {
         if (await RootOf(request.Query.GetValueOrDefault("root"), response) is not { } root) return;
         if (await Cli(response) is not { } cli) return;
+        var streaming = request.Query.GetValueOrDefault("stream") == "1";
 
         var (files, truncated) = Workspace.YamlFiles(root);
+        var signature = Signature(root, files, cli);
+        byte[]? cached = null;
+        lock (_listings)
+        {
+            if (_listings.TryGetValue(root, out var last) && last.Signature == signature) cached = last.Listing;
+        }
+        if (cached is not null)
+        {
+            if (streaming) await (await response.Stream(200, "application/x-ndjson; charset=utf-8")).WriteAsync(ListingLine(cached), gone);
+            else await response.Json(200, cached);
+            return;
+        }
+
         var environments = files.Where(Workspace.IsEnvironmentFile).ToList();
         var tinyprobeFiles = new List<string>();
         foreach (var file in files.Except(environments))
@@ -341,14 +368,53 @@ internal sealed class Api
             }
         }
 
+        // Only what changed is read again: a file whose own text, imports and sequences are as before keeps its inspect.
         var inspections = new string[tinyprobeFiles.Count];
-        await Parallel.ForEachAsync(Enumerable.Range(0, tinyprobeFiles.Count), new ParallelOptions { MaxDegreeOfParallelism = 8, CancellationToken = gone }, async (i, cancel) =>
+        var toRead = new List<int>();
+        for (var i = 0; i < tinyprobeFiles.Count; i++)
         {
-            var (_, output, _) = await TinyprobeCli.Run(cli.Path, ["inspect", tinyprobeFiles[i], "--json"], root, cancel);
-            inspections[i] = output;
+            var full = Path.Combine(root, tinyprobeFiles[i]);
+            bool fresh;
+            (string Output, Dictionary<string, long> Stamps) known;
+            lock (_inspected) fresh = _inspected.TryGetValue($"{cli.Path}|{cli.Version}|{full}", out known) && known.Stamps.All(stamp => Stamp(stamp.Key) == stamp.Value);
+            if (fresh) inspections[i] = known.Output;
+            else toRead.Add(i);
+        }
+
+        var output = streaming ? await response.Stream(200, "application/x-ndjson; charset=utf-8") : null;
+        var writing = new SemaphoreSlim(1, 1);
+        async Task Line(byte[] line)
+        {
+            if (output is null) return;
+            await writing.WaitAsync(gone);
+            try
+            {
+                await output.WriteAsync(line, gone);
+            }
+            finally
+            {
+                writing.Release();
+            }
+        }
+        await Line(Json.Write(w => { w.WriteStartObject(); w.WriteNumber("total", toRead.Count); w.WriteEndObject(); }).Concat("\n"u8.ToArray()).ToArray());
+
+        var done = 0;
+        await Parallel.ForEachAsync(toRead, new ParallelOptions { MaxDegreeOfParallelism = 8, CancellationToken = gone }, async (i, cancel) =>
+        {
+            var full = Path.Combine(root, tinyprobeFiles[i]);
+            var (_, inspection, _) = await TinyprobeCli.Run(cli.Path, ["inspect", tinyprobeFiles[i], "--json"], root, cancel);
+            inspections[i] = inspection;
+            // An invalid file is read again every time: its error may be in an import it does not list.
+            if (inspection.Contains("\"valid\": true", StringComparison.Ordinal))
+            {
+                var stamps = Sources(full, inspection).ToDictionary(file => file, Stamp, StringComparer.Ordinal);
+                lock (_inspected) _inspected[$"{cli.Path}|{cli.Version}|{full}"] = (inspection, stamps);
+            }
+            var count = Interlocked.Increment(ref done);
+            await Line(Json.Write(w => { w.WriteStartObject(); w.WriteNumber("done", count); w.WriteEndObject(); }).Concat("\n"u8.ToArray()).ToArray());
         });
 
-        await response.Json(200, Json.Write(w =>
+        var listing = Json.Write(w =>
         {
             w.WriteStartObject();
             w.WriteString("root", root);
@@ -366,7 +432,63 @@ internal sealed class Api
             foreach (var environment in environments) w.WriteStringValue(environment);
             w.WriteEndArray();
             w.WriteEndObject();
-        }));
+        });
+        lock (_listings) _listings[root] = (signature, listing);
+
+        if (output is not null) await Line(ListingLine(listing));
+        else await response.Json(200, listing);
+    }
+
+    /// <summary>The files an inspection was read from: the file, its imports and the sequences its steps use.</summary>
+    private static IEnumerable<string> Sources(string file, string inspection)
+    {
+        yield return file;
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(inspection);
+        }
+        catch (JsonException)
+        {
+            yield break;
+        }
+        using (document)
+        {
+            var root = document.RootElement;
+            var files = new List<string>();
+            if (root.TryGetProperty("imports", out var imports) && imports.ValueKind == JsonValueKind.Array)
+                foreach (var import in imports.EnumerateArray())
+                    if (Json.String(import, "file") is { } path) files.Add(path);
+            if (root.TryGetProperty("steps", out var steps) && steps.ValueKind == JsonValueKind.Array)
+                foreach (var step in steps.EnumerateArray())
+                    if (step.TryGetProperty("sequence", out var sequence) && Json.String(sequence, "file") is { } path) files.Add(path);
+            foreach (var path in files.Distinct(StringComparer.Ordinal))
+                yield return Path.IsPathRooted(path) ? path : Path.GetFullPath(Path.Combine(Path.GetDirectoryName(file)!, path));
+        }
+    }
+
+    /// <summary>A file's time of change and size, or -1 when it is gone.</summary>
+    private static long Stamp(string path)
+    {
+        var info = new FileInfo(path);
+        return info.Exists ? info.LastWriteTimeUtc.Ticks ^ (info.Length << 1) : -1;
+    }
+
+    private static byte[] ListingLine(byte[] listing) => [.. "{\"listing\":"u8, .. listing, .. "}\n"u8];
+
+    /// <summary>
+    /// What a listing depends on: every YAML file's path, size and time of change, and the tinyprobe that read them
+    /// (a newer one may read them differently). An import changed outside the folder is seen at the next change.
+    /// </summary>
+    private static string Signature(string root, List<string> files, CliInfo cli)
+    {
+        var text = new StringBuilder(cli.Path).Append('|').Append(cli.Version);
+        foreach (var file in files)
+        {
+            var info = new FileInfo(Path.Combine(root, file));
+            text.Append('\n').Append(file).Append('|').Append(info.Exists ? info.Length : -1).Append('|').Append(info.Exists ? info.LastWriteTimeUtc.Ticks : 0);
+        }
+        return text.ToString();
     }
 
     private async Task ReadFile(HttpRequest request, HttpResponse response)

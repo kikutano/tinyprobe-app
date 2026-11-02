@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.2
+
+The diagram of a workflow with many values:
+
+- **Values wrap**: `uses` and `saves` are on lines of their own, and a long list goes on the next line inside the step instead of running out to the right.
+- **No line that leads nowhere**: a value saved and never used afterwards is listed in grey, `(not used)`, without a line.
+- **Every arrow reaches its step**: the arrows that come into the same step are spread along its side instead of covering each other.
+- **Narrower and easier to tell apart**: a column is used again once its value has ended, and values on screen at the same time never share a color (eight colors).
+
 ## 0.3.1
 
 From the first days of use on a real project.

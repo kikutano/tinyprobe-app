@@ -1,6 +1,6 @@
 /* The flow of a workflow (flow.js), shared by tinyprobe-app and the VS Code extension. It uses the host's
    tokens: --fg, --bg, --muted, --border, --selected, --code-bg, --passed, --failed, --running, --mono,
-   and the lane colors --lane-1 to --lane-6, with fallbacks that read on light and dark backgrounds. */
+   and the lane colors --lane-1 to --lane-8, with fallbacks that read on light and dark backgrounds. */
 
 .flow { overflow-x: auto; }
 .flow-svg { display: block; width: 100%; height: auto; font-family: inherit; }
@@ -35,6 +35,8 @@
 .lane-3 { --lane: var(--lane-4, #b14fc4); }
 .lane-4 { --lane: var(--lane-5, #c4a000); }
 .lane-5 { --lane: var(--lane-6, #d6455d); }
+.lane-6 { --lane: var(--lane-7, #10a5a5); }
+.lane-7 { --lane: var(--lane-8, #8a6d3b); }
 .flow-lane .flow-lane-line { stroke: var(--lane); }
 .flow-lane-fill { fill: var(--lane); }
 .flow-lane-text { fill: var(--lane); font-weight: 600; }

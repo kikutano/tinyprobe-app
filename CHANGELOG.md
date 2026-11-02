@@ -4,6 +4,7 @@
 
 - **The diagram without lines**: a workflow is a column of steps, and each value is colored the same where it is saved and where it is used. **uses** and **saves** are in bold.
 - **Bigger text in the diagram**: larger fonts, and the diagram grows with the width of the page, so it reads well on large and high-resolution screens.
+- **The list of a workflow's steps shows the last run**: ✓ or ✗ for each step, with its status and time, updated as the workflow runs; a click on a step goes to its request and response.
 - `scripts/dev.sh run [folder]` passed `run` to the app as a folder.
 
 ## 0.4.2

@@ -637,14 +637,31 @@
         h('p', { class: 'aside' }, 'Each colored line is a value a step saves, down to the steps that use it. Click a step to see what it sends and checks.'));
     } else {
       state.flow = null;
-      content = h('ol', { class: 'step-table' }, steps.map(step => h('li', null,
+      // Each step with how it went in the last run, as the diagram shows it; a click goes to its detail.
+      const states = stepStates(state.runs.get(workflow.path));
+      const icons = { pending: '○', running: '●', passed: '✓', failed: '✗', skipped: '–' };
+      content = h('ol', { class: 'step-table' }, steps.map(step => {
+        const run = states.get(step.index);
+        const result = run?.result;
+        return h('li', { class: `step-row${result ? ' has-result' : ''}`, onclick: event => {
+          if (event.target.closest('button') || !result) return;
+          const last = state.runViews.get(workflow.path);
+          if (!last?.node.isConnected) return;
+          last.view.select(step.index);
+          requestAnimationFrame(() => (last.node.querySelector('.details') ?? last.node).scrollIntoView({ behavior: 'smooth', block: 'start' }));
+        } },
+        h('span', { class: `step-state ${run?.status ?? ''}`, title: run?.status ?? 'not run yet' }, run ? icons[run.status] : ''),
         h('span', { class: 'step-number' }, step.index + 1),
         h('span', { class: 'step-label' }, step.name,
           step.sequence ? h('span', { class: 'step-kind' }, `  · from ${step.sequence.name || baseName(step.sequence.file)}`) : null,
           step.for_each ? h('span', { class: 'step-kind' }, '  · for each item') : null,
           step.until ? h('span', { class: 'step-kind' }, '  · until') : null),
         step.type === 'call' ? h('span', { class: 'verb' }, step.call ?? '') : h('span', { class: 'step-kind' }, step.type),
-        h('button', { type: 'button', class: 'button small', title: 'Run the workflow up to this step and show its response', onclick: () => runWorkflow(workflow, step.index + 1) }, 'Run to here'))));
+        h('span', { class: 'step-result' },
+          result ? h('span', { class: `code ${runView.statusClass(result.status)}` }, result.status ?? '---') : null,
+          result ? ` ${runView.formatDuration(result.duration_ms)}` : run?.status === 'running' && run.items ? `item ${run.item}/${run.items}` : run?.status === 'running' && run.attempt > 1 ? `attempt ${run.attempt}` : ''),
+        h('button', { type: 'button', class: 'button small', title: 'Run the workflow up to this step and show its response', onclick: () => runWorkflow(workflow, step.index + 1) }, 'Run to here'));
+      }));
     }
 
     return h('div', null,
@@ -660,6 +677,29 @@
           state.info.editing ? h('button', { type: 'button', class: `button small${mode === 'edit' ? ' active' : ''}`, 'aria-pressed': String(mode === 'edit'), onclick: () => toggle('edit') }, 'Edit') : null)),
       content,
       mode === 'list' ? h('p', { class: 'aside' }, 'Run to here runs the steps before it again each time: nothing is kept between runs.') : null);
+  }
+
+  /** How each step went in a run, from its events: the same states as the diagram. */
+  function stepStates(events) {
+    const states = new Map();
+    for (const e of events ?? []) {
+      if (e.event === 'run_started') {
+        states.clear();
+        for (const s of e.steps ?? []) states.set(s.index, { status: 'pending' });
+      } else if (e.event === 'step_started') {
+        // A step that starts ends the sleep before it, which has no step_completed.
+        for (const [index, s] of states) if (index < e.index && s.status === 'running') s.status = 'passed';
+        states.set(e.index, { status: 'running', attempt: e.attempt ?? 1, item: e.iteration ?? null, items: e.iterations ?? null });
+      } else if (e.event === 'step_completed') {
+        states.set(e.index, { status: e.success ? 'passed' : 'failed', result: e });
+      } else if (e.event === 'run_finished') {
+        for (const s of states.values()) {
+          if (s.status === 'running') s.status = 'passed';
+          else if (s.status === 'pending') s.status = 'skipped';
+        }
+      }
+    }
+    return states;
   }
 
   /** What a step of the diagram sends, checks and saves, with its result in the last run. */
@@ -1534,6 +1574,8 @@
         // The diagram lights up as the run goes, and again when the workflow is opened later.
         recorded.push(event);
         if (state.flow?.path === workflow.path) state.flow.diagram.apply(event);
+        // The list view follows the run too.
+        if (state.selection.kind === 'workflow' && state.selection.file === workflow.path && recall('workflow-view', 'diagram') === 'list') renderView();
         if (event.event === 'run_finished' && !to) {
           state.outcomes.set(workflow.path, event.success);
           renderSidebar();

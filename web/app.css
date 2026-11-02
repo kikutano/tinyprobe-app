@@ -343,3 +343,13 @@ label.check { display: block; padding: 2px 0; font-family: var(--mono); font-siz
   .indeterminate .progress-fill { animation: none; width: 100%; opacity: 0.5; }
   .progress-fill { transition: none; }
 }
+
+/* --- The steps of a workflow as a list, with the last run ---------------------------------------------- */
+
+.step-state { width: 1.1em; text-align: center; color: var(--muted); }
+.step-state.passed { color: var(--passed); }
+.step-state.failed { color: var(--failed); }
+.step-state.running { color: var(--running); }
+.step-result { min-width: 7.5em; text-align: right; color: var(--muted); font-size: 0.88em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.step-row.has-result { cursor: pointer; }
+.step-row.has-result:hover { background: var(--hover); }

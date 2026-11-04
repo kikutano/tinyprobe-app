@@ -3,6 +3,7 @@
 ## Unreleased
 
 - **License: GPL-3.0.** From this version tinyprobe-app is licensed under the GNU General Public License, version 3 (GPL-3.0-only): it stays free and open source, and a changed version can be shared only under the same license, with its source code. Releases up to 0.4.4 stay under the MIT License.
+- **A clearer head for workflows and sequences**: the name, the file and the description sit in a card of their own, the file as a small chip and the description under a line, as wide as the card, so it wraps less.
 
 ## 0.4.4
 

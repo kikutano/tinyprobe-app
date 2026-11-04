@@ -608,6 +608,14 @@
 
   // --- A workflow and a sequence ---------------------------------------------------------------------------
 
+  /** The name, the file and the description of a workflow or a sequence, each in its own place so they read apart. */
+  function pageHead(title, file, description) {
+    return h('header', { class: 'page-head' },
+      h('h1', null, title),
+      h('span', { class: 'file-chip', title: 'The file in the opened folder' }, file),
+      description ? h('p', { class: 'page-desc' }, description) : null);
+  }
+
   function workflowView({ file }) {
     const workflow = state.model.workflows.find(w => w.path === file);
     if (!workflow) return null;
@@ -665,9 +673,7 @@
     }
 
     return h('div', null,
-      h('h1', null, workflow.name),
-      h('div', { class: 'where' }, file),
-      workflow.inspect.description ? h('p', { class: 'lead' }, workflow.inspect.description) : null,
+      pageHead(workflow.name, file, workflow.inspect.description),
       h('div', { class: 'actions' },
         h('button', { type: 'button', class: 'button primary', onclick: () => runWorkflow(workflow) }, '▶ Run'),
         outcomeBadge(workflow.path),
@@ -773,9 +779,7 @@
     if (!sequence) return null;
     const params = sequence.inspect.params ?? [];
     return h('div', null,
-      h('h1', null, sequence.name),
-      h('div', { class: 'where' }, file),
-      h('p', { class: 'lead' }, 'A sequence runs inside workflows, through a use: step, with the values given in its with:. Run a workflow that uses it to see it work.'),
+      pageHead(sequence.name, file, 'A sequence runs inside workflows, through a use: step, with the values given in its with:. Run a workflow that uses it to see it work.'),
       params.length > 0 ? h('h2', null, 'Params') : null,
       params.length > 0 ? h('div', { class: 'form' }, params.flatMap(p => [h('label', null, p.name, p.required ? h('span', { class: 'required' }, '*') : null), h('div', { class: 'aside' }, p.required ? 'required' : `default ${JSON.stringify(p.default)}`)])) : null,
       h('ol', { class: 'step-table' }, (sequence.inspect.steps ?? []).map(step => h('li', null,

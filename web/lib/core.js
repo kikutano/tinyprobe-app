@@ -80,6 +80,8 @@
   /** A YAML scalar for a string: plain when YAML reads it back as the same string, double-quoted otherwise. */
   function scalar(value) {
     const text = String(value);
+    // A duration such as 1s or 500ms is text to every YAML reader: written as people write it.
+    if (/^\d+(\.\d+)?(ms|s|m|h)$/.test(text)) return text;
     const plain = text !== '' &&
       text === text.trim() &&
       !RESERVED.test(text) &&

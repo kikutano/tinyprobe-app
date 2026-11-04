@@ -130,12 +130,81 @@ test('a step is written as YAML, several operators on one path in one mapping', 
   assert.equal(editor.stepYaml({ kind: 'sleep', sleep: '2s' }, 2), '  - sleep: 2s\n');
 });
 
-test('what the form cannot show is edited as YAML', () => {
+test('what the form does not show comes back as YAML, under the keys of the step', () => {
   assert.deepEqual(editor.stepFromSource({ use: 'log-in.yaml' }), { unsupported: ['use'] });
-  assert.deepEqual(editor.stepFromSource({ call: 'a', until: {}, expect: { headers: {} } }), { unsupported: ['until', 'checks on headers'] });
-  assert.deepEqual(editor.stepFromSource({ call: 'a', expect: { body: { $: { schema: 'x.json' } } } }), { unsupported: ['schema checks'] });
-  assert.deepEqual(editor.stepFromSource({ call: 'a', save: { csrf: { cookie: 'XSRF' } } }), { unsupported: ['saving a cookie'] });
   assert.deepEqual(editor.stepFromSource({ sleep: '1s' }), { kind: 'sleep', sleep: '1s' });
+  const form = editor.stepFromSource({
+    name: 'Wait for the report',
+    call: 'get_report',
+    with: { id: '${reportId}', note: '', tags: ['a', 'b'] },
+    until: { every: '1s', timeout: '30s' },
+    expect: {
+      status: 200,
+      headers: { 'Content-Type': { contains: 'json' } },
+      body: { '$.state': 'done', '$.owner': null, '$': { schema: 'report.json' } }
+    },
+    save: { csrf: { cookie: 'XSRF' }, url: '$.url' }
+  });
+  assert.deepEqual(form.with, [{ name: 'id', value: '${reportId}' }, { name: 'note', value: '""' }]);
+  assert.deepEqual(form.checks, [{ path: '$.state', op: 'eq', value: 'done' }, { path: '$.owner', op: 'eq', value: 'null' }]);
+  assert.deepEqual(form.saves, [{ name: 'url', path: '$.url' }]);
+  assert.equal(form.extra, [
+    'until:',
+    '  every: 1s',
+    '  timeout: 30s',
+    'with:',
+    '  tags:',
+    '    - a',
+    '    - b',
+    'expect:',
+    '  headers:',
+    '    Content-Type:',
+    '      contains: json',
+    '  body:',
+    '    $:',
+    '      schema: report.json',
+    'save:',
+    '  csrf:',
+    '    cookie: XSRF',
+    ''
+  ].join('\n'));
+  assert.equal(editor.stepYaml(form, 2), [
+    '  - name: Wait for the report',
+    '    call: get_report',
+    '    until:',
+    '      every: 1s',
+    '      timeout: 30s',
+    '    with:',
+    '      id: ${reportId}',
+    '      note: ""',
+    '      tags:',
+    '        - a',
+    '        - b',
+    '    expect:',
+    '      status: 200',
+    '      headers:',
+    '        Content-Type:',
+    '          contains: json',
+    '      body:',
+    '        $.state: done',
+    '        $.owner: null',
+    '        $:',
+    '          schema: report.json',
+    '    save:',
+    '      url: $.url',
+    '      csrf:',
+    '        cookie: XSRF',
+    ''
+  ].join('\n'));
+});
+
+test('YAML typed by hand goes where its keys say, its comments and indentation kept', () => {
+  const step = { kind: 'call', call: 'ping', status: '200', extra: '  # poll it\n  until:\n      every: 1s\n  expect:\n      duration: { lt: 500ms }\n' };
+  assert.equal(editor.stepYaml(step, 2), '  - call: ping\n    # poll it\n    until:\n        every: 1s\n    expect:\n      status: 200\n      duration: { lt: 500ms }\n');
+  assert.throws(() => editor.stepYaml({ ...step, extra: 'expect: { headers: {} }' }), /Write expect: with one key per line/);
+  assert.throws(() => editor.stepYaml({ ...step, extra: 'name: x' }), /set in the form above/);
+  assert.throws(() => editor.extraParts('- until'), /Line 1 of the YAML is not a key/);
+  assert.deepEqual(editor.extraParts(' \n'), { step: [], with: [], expect: [], body: [], save: [] });
 });
 
 test('a new workflow has its imports and its first step', () => {
@@ -164,6 +233,6 @@ test('a step written by the form is read back by tinyprobe into the same form', 
   const json = JSON.parse(execFileSync(process.env.TINYPROBE_PATH, ['inspect', 'w.yaml', '--json', '--source'], { cwd: folder }).toString());
   assert.equal(json.valid, true, JSON.stringify(json.errors));
   const back = editor.stepFromSource(json.source.steps[0]);
-  assert.equal(editor.stepYaml(back, 2), editor.stepYaml(step, 2));
+  assert.equal(editor.stepYaml(back, 2), editor.stepYaml({ ...step, extra: '' }, 2));
   fs.rmSync(folder, { recursive: true });
 });

@@ -184,44 +184,139 @@
   ];
   const OPERATOR_KEYS = OPERATORS.map(([key]) => key);
 
+  const isMapping = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+  const isScalar = value => value === null || typeof value !== 'object';
+
   /**
-   * The step form from an item of `source.steps`, or { unsupported } with what only YAML can say:
-   * `use`, `until`, `for_each`, checks on headers, cookies or duration, `any`, `schema`, cookie saves.
+   * The step form from an item of `source.steps`. What the form does not show (until, for_each, checks on headers,
+   * cookies or duration, schema and any checks, cookie saves, values that are lists or mappings) comes back as
+   * `extra`, YAML with the same keys as the step, which stepYaml writes back next to the form's own.
+   * A `use` step is another kind of step: { unsupported } and it is edited as YAML.
    */
   function stepFromSource(step) {
-    if (step && typeof step === 'object' && Object.keys(step).length === 1 && step.sleep !== undefined) return { kind: 'sleep', sleep: display(step.sleep) };
-    const unsupported = [];
-    const known = ['name', 'call', 'with', 'expect', 'save'];
-    for (const key of Object.keys(step ?? {})) if (!known.includes(key)) unsupported.push(key);
-    const expect = step?.expect ?? {};
-    for (const key of Object.keys(expect)) if (!['status', 'body'].includes(key)) unsupported.push(`checks on ${key}`);
+    // In a value or a check, null is the YAML null: an empty field would mean "not sent" or "".
+    const shown = value => value === null ? 'null' : display(value);
+    if (isMapping(step) && Object.keys(step).length === 1 && step.sleep !== undefined) return { kind: 'sleep', sleep: display(step.sleep) };
+    if (!isMapping(step) || step.use !== undefined) return { unsupported: ['use'] };
+    if (step.call === undefined) return { unsupported: ['no call'] };
+    const extra = {};
+    const put = (keys, value) => {
+      let at = extra;
+      for (const key of keys.slice(0, -1)) at = at[key] ??= {};
+      at[keys[keys.length - 1]] = value;
+    };
+    for (const [key, value] of Object.entries(step)) if (!['name', 'call', 'with', 'expect', 'save'].includes(key)) put([key], value);
+
+    const withValues = [];
+    if (step.with !== undefined && !isMapping(step.with)) put(['with'], step.with);
+    for (const [name, value] of Object.entries(isMapping(step.with) ? step.with : {})) {
+      // An empty text is sent as it is, so its field shows the quotes: an empty field is a value not sent.
+      if (isScalar(value)) withValues.push({ name, value: value === '' ? '""' : shown(value) });
+      else put(['with', name], value);
+    }
+
+    const expect = isMapping(step.expect) ? step.expect : {};
+    if (step.expect !== undefined && !isMapping(step.expect)) put(['expect'], step.expect);
+    let status = '';
+    if (expect.status !== undefined) {
+      if (isScalar(expect.status)) status = display(expect.status);
+      else if (Array.isArray(expect.status) && expect.status.every(isScalar)) status = expect.status.join(', ');
+      else put(['expect', 'status'], expect.status);
+    }
+    for (const [key, value] of Object.entries(expect)) if (!['status', 'body'].includes(key)) put(['expect', key], value);
     const checks = [];
-    for (const [path, condition] of Object.entries(expect.body ?? {})) {
-      if (condition !== null && typeof condition === 'object' && !Array.isArray(condition)) {
-        for (const [op, value] of Object.entries(condition)) {
-          if (!OPERATOR_KEYS.includes(op)) unsupported.push(`${op} checks`);
-          else checks.push({ path, op, value: op === 'in' && Array.isArray(value) ? value.map(display).join(', ') : display(value) });
-        }
-      } else {
-        checks.push({ path, op: 'eq', value: display(condition) });
-      }
+    if (expect.body !== undefined && !isMapping(expect.body)) put(['expect', 'body'], expect.body);
+    for (const [path, condition] of Object.entries(isMapping(expect.body) ? expect.body : {})) {
+      // A path is in the form only when all its conditions are: its keys stay together, in one place.
+      const inForm = isMapping(condition)
+        ? Object.entries(condition).every(([op, value]) => OPERATOR_KEYS.includes(op) && (isScalar(value) || (op === 'in' && Array.isArray(value) && value.every(isScalar))))
+        : isScalar(condition);
+      if (!inForm) put(['expect', 'body', path], condition);
+      else if (isMapping(condition)) {
+        for (const [op, value] of Object.entries(condition)) checks.push({ path, op, value: op === 'in' && Array.isArray(value) ? value.map(shown).join(', ') : shown(value) });
+      } else checks.push({ path, op: 'eq', value: shown(condition) });
     }
+
     const saves = [];
-    for (const [name, from] of Object.entries(step?.save ?? {})) {
+    if (step.save !== undefined && !isMapping(step.save)) put(['save'], step.save);
+    for (const [name, from] of Object.entries(isMapping(step.save) ? step.save : {})) {
       if (typeof from === 'string') saves.push({ name, path: from });
-      else unsupported.push('saving a cookie');
+      else put(['save', name], from);
     }
-    if (unsupported.length > 0) return { unsupported: [...new Set(unsupported)] };
-    const status = expect.status === undefined ? '' : Array.isArray(expect.status) ? expect.status.join(', ') : display(expect.status);
     return {
       kind: 'call',
-      name: step.name ?? '',
-      call: step.call ?? '',
-      with: Object.entries(step.with ?? {}).map(([n, v]) => ({ name: n, value: display(v) })),
+      name: step.name === undefined ? '' : display(step.name),
+      call: display(step.call),
+      with: withValues,
       status,
       checks,
-      saves
+      saves,
+      extra: Object.keys(extra).length > 0 ? toYaml(extra, 0).replace(/^\n/, '') + '\n' : ''
     };
+  }
+
+  /**
+   * The keys of a YAML mapping written as a block, each with its lines, its indentation made relative to it:
+   * enough to put typed YAML next to what the form writes without a YAML parser. Comments go with the key after
+   * them. Throws an Error with a message for the page when a line at the left is not a key.
+   */
+  function mappingBlocks(text) {
+    const lines = String(text ?? '').replace(/\r\n?/g, '\n').split('\n');
+    const indentOf = line => line.length - line.trimStart().length;
+    const content = lines.filter(line => line.trim() !== '' && !line.trimStart().startsWith('#'));
+    if (content.length === 0) return [];
+    const margin = Math.min(...content.map(indentOf));
+    const blocks = [];
+    let comments = [];
+    for (const [i, raw] of lines.entries()) {
+      if (raw.trim() === '') {
+        if (blocks.length > 0) blocks[blocks.length - 1].body.push('');
+        continue;
+      }
+      const line = raw.slice(Math.min(margin, indentOf(raw)));
+      if (/^\s/.test(line) && blocks.length > 0) {
+        blocks[blocks.length - 1].body.push(line);
+        continue;
+      }
+      if (line.trimStart().startsWith('#')) {
+        comments.push(line.trimStart());
+        continue;
+      }
+      const match = /^("(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[^\s"'#-][^#]*?)\s*:(?:\s+(.*))?$/.exec(line);
+      if (!match) throw new Error(`Line ${i + 1} of the YAML is not a key such as until: or for_each:.`);
+      const name = match[1];
+      const key = name.startsWith('"') ? JSON.parse(name) : name.startsWith("'") ? name.slice(1, -1).replace(/''/g, "'") : name;
+      const value = (match[2] ?? '').replace(/^#.*/, '').trim();
+      blocks.push({ key, value, lines: [...comments, line], body: [] });
+      comments = [];
+    }
+    for (const block of blocks) {
+      while (block.body.length > 0 && block.body[block.body.length - 1] === '') block.body.pop();
+    }
+    return blocks;
+  }
+
+  /**
+   * The typed YAML of a step form, split by where each key goes: next to call, or under with, expect, the body
+   * checks or save, after the form's own. Throws an Error with a message for the page.
+   */
+  function extraParts(text) {
+    const parts = { step: [], with: [], expect: [], body: [], save: [] };
+    const nested = (block, path) => {
+      if (block.value !== '') throw new Error(`Write ${path}: with one key per line under it, so the form can add its own.`);
+      return mappingBlocks(block.body.join('\n'));
+    };
+    for (const block of mappingBlocks(text)) {
+      if (block.key === 'name' || block.key === 'call') throw new Error(`The ${block.key} is set in the form above, not in the YAML.`);
+      if (block.key === 'with' || block.key === 'save') parts[block.key].push(...nested(block, block.key));
+      else if (block.key === 'expect') {
+        for (const child of nested(block, 'expect')) {
+          if (child.key === 'body') parts.body.push(...nested(child, 'body'));
+          else parts.expect.push(child);
+        }
+      } else parts.step.push(block);
+    }
+    return parts;
   }
 
   /** The YAML of a step, a list item at the given indentation. */
@@ -235,22 +330,30 @@
     const inner = ' '.repeat(indent + 2);
     const deeper = ' '.repeat(indent + 4);
     const deepest = ' '.repeat(indent + 6);
+    const extra = extraParts(step.extra);
     const lines = [];
     const push = line => lines.push(lines.length === 0 ? `${pad}- ${line}` : `${inner}${line}`);
+    // Typed YAML keeps its own lines, moved to where its keys go.
+    const typedBlocks = (blocks, at) => {
+      for (const block of blocks) for (const line of [...block.lines, ...block.body]) lines.push(line === '' ? '' : `${at}${line}`);
+    };
     if (step.name) push(`name: ${scalar(step.name)}`);
     push(`call: ${scalar(step.call)}`);
+    typedBlocks(extra.step, inner);
     const withValues = (step.with ?? []).filter(w => w.name && w.value !== '');
-    if (withValues.length > 0) {
+    if (withValues.length > 0 || extra.with.length > 0) {
       push('with:');
       for (const w of withValues) lines.push(`${deeper}${scalar(w.name)}: ${typed(w.value)}`);
+      typedBlocks(extra.with, deeper);
     }
     const codes = String(step.status ?? '').split(',').map(c => c.trim()).filter(Boolean);
     const checks = (step.checks ?? []).filter(c => c.path);
-    if (codes.length > 0 || checks.length > 0) {
+    if (codes.length > 0 || checks.length > 0 || extra.expect.length > 0 || extra.body.length > 0) {
       push('expect:');
       if (codes.length === 1) lines.push(`${deeper}status: ${codes[0]}`);
       else if (codes.length > 1) lines.push(`${deeper}status: [${codes.join(', ')}]`);
-      if (checks.length > 0) {
+      typedBlocks(extra.expect, deeper);
+      if (checks.length > 0 || extra.body.length > 0) {
         lines.push(`${deeper}body:`);
         // Several operators on one path become one mapping: all of them must pass.
         const byPath = new Map();
@@ -265,12 +368,14 @@
             ? `${deepest}${scalar(path)}: ${typed(conditions[0].value)}`
             : `${deepest}${scalar(path)}: { ${conditions.map(c => `${c.op}: ${value(c)}`).join(', ')} }`);
         }
+        typedBlocks(extra.body, deepest);
       }
     }
     const saves = (step.saves ?? []).filter(s => s.name && s.path);
-    if (saves.length > 0) {
+    if (saves.length > 0 || extra.save.length > 0) {
       push('save:');
       for (const s of saves) lines.push(`${deeper}${scalar(s.name)}: ${scalar(s.path)}`);
+      typedBlocks(extra.save, deeper);
     }
     return lines.join('\n') + '\n';
   }
@@ -306,7 +411,7 @@
   Object.assign(exports, {
     offsetOf, replaceBlock, removeBlock, insertAfter, swapBlocks, indentOf,
     display, requestFromSource, AUTH_KINDS, authFromSource, authSetYaml, checkAuthName, addAuthSet,
-    OPERATORS, stepFromSource, stepYaml, newWorkflowFile, workflowFileName, relativePath
+    OPERATORS, stepFromSource, mappingBlocks, extraParts, stepYaml, newWorkflowFile, workflowFileName, relativePath
   });
 })(typeof module === 'object' && module.exports ? module.exports : (globalThis.tinyprobeEditor = {}),
   typeof module === 'object' && module.exports ? require('./core.js') : globalThis.tinyprobeCore);

@@ -668,6 +668,7 @@
         h('span', { class: 'step-result' },
           result ? h('span', { class: `code ${runView.statusClass(result.status)}` }, result.status ?? '---') : null,
           result ? ` ${runView.formatDuration(result.duration_ms)}` : run?.status === 'running' && run.items ? `item ${run.item}/${run.items}` : run?.status === 'running' && run.attempt > 1 ? `attempt ${run.attempt}` : ''),
+        editStepButton(workflow, step),
         h('button', { type: 'button', class: 'button small', title: 'Run the workflow up to this step and show its response', onclick: () => runWorkflow(workflow, step.index + 1) }, 'Run to here'));
       }));
     }
@@ -740,6 +741,17 @@
     return states;
   }
 
+  /** Edit for a step of `inspect`: its form, found by its line; a step from a sequence opens its use step. */
+  function editStepButton(workflow, step) {
+    const line = step.location?.line;
+    if (!state.info.editing || !line || slash(step.location.file) !== workflow.path && !slash(step.location.file).endsWith(`/${workflow.path}`)) return null;
+    return h('button', {
+      type: 'button', class: 'button small',
+      title: step.sequence ? 'Edit the use step that runs this sequence' : 'Edit this step',
+      onclick: () => select({ kind: 'edit-step', file: workflow.path, line })
+    }, 'Edit');
+  }
+
   /** What a step of the diagram sends, checks and saves, with its result in the last run. */
   function showStep(workflow, step, diagram, details) {
     if (!step) return details.replaceChildren();
@@ -753,7 +765,9 @@
     details.replaceChildren(h('div', { class: 'panel' },
       h('div', { class: 'panel-head' },
         h('span', { class: 'what' }, `${step.index + 1}. ${step.name}`),
-        h('button', { type: 'button', class: 'button small', onclick: () => runWorkflow(workflow, step.index + 1) }, 'Run to here')),
+        h('span', { class: 'panel-actions' },
+          editStepButton(workflow, step),
+          h('button', { type: 'button', class: 'button small', onclick: () => runWorkflow(workflow, step.index + 1) }, 'Run to here'))),
       h('div', { class: 'panel-body' },
         step.type === 'call' ? h('div', { class: 'mono' }, `call ${step.call}`) : h('div', { class: 'mono' }, step.type),
         step.sequence ? h('div', { class: 'aside' }, `From the sequence ${step.sequence.name || baseName(step.sequence.file)}.`) : null,
@@ -1211,7 +1225,7 @@
   }
 
   /** The form of one step: a call with its values, expected status, checks and saves; or a wait. */
-  function stepForm({ endpoints, initial, onSave, onCancel, status }) {
+  function stepForm({ endpoints, initial, onSave, onCancel, onYaml, status }) {
     const kind = control('select', { id: 'step-kind' }, h('option', { value: 'call', selected: initial.kind !== 'sleep' }, 'Call an endpoint'), h('option', { value: 'sleep', selected: initial.kind === 'sleep' }, 'Wait'));
     const name = control('input', { id: 'step-name', value: initial.name ?? '', placeholder: 'What this step checks, e.g. The user can be read' });
     const call = control('select', { id: 'step-call' }, endpoints.map(e => h('option', { value: e.name, selected: initial.call === e.name }, `${e.name}  (${e.method} ${e.path})`)));
@@ -1220,6 +1234,8 @@
     const withArea = h('div', { class: 'rows' });
     const checkRows = h('div', { class: 'rows' });
     const saveRows = h('div', { class: 'rows' });
+    const extra = control('textarea', { id: 'step-extra', class: 'textarea', rows: Math.min(Math.max((initial.extra ?? '').split('\n').length + 1, 4), 24), placeholder: 'until:\n  every: 1s\n  timeout: 30s' });
+    extra.value = initial.extra ?? '';
     let given = initial.with ?? [];
 
     const drawWith = () => {
@@ -1258,7 +1274,11 @@
         h('label', null, 'Checks'), h('div', null, checkRows, h('button', { type: 'button', class: 'button small', onclick: () => addCheck() }, '+ Check')),
         h('div', { class: 'hint' }, 'A check reads a value of the JSON response by its path: $.id, $.items[0].name, $ for the whole body. "is one of" takes values separated by commas.'),
         h('label', null, 'Save'), h('div', null, saveRows, h('button', { type: 'button', class: 'button small', onclick: () => addSave() }, '+ Save a value')),
-        h('div', { class: 'hint' }, 'A saved value is used by the next steps as ${name}: a token, an id.')));
+        h('div', { class: 'hint' }, 'A saved value is used by the next steps as ${name}: a token, an id.')),
+      h('details', { class: 'more step-extra', open: Boolean(initial.extra) },
+        h('summary', null, initial.extra ? 'More of this step, in YAML' : 'More, in YAML: until, for_each, checks on headers…'),
+        h('p', { class: 'aside' }, 'What the form does not show, with the keys of the step: until, for_each, checks on headers, cookies or duration, schema checks. It is written with the form, under the same keys.'),
+        extra));
     const sleepPart = h('div', { class: 'form' }, h('label', { for: 'step-sleep' }, 'Wait'), sleep);
     const toggle = () => { callPart.hidden = kind.value !== 'call'; sleepPart.hidden = kind.value !== 'sleep'; };
     kind.addEventListener('change', toggle);
@@ -1269,6 +1289,11 @@
       event.preventDefault();
       if (kind.value === 'sleep') return onSave({ kind: 'sleep', sleep: sleep.value });
       if (!call.value) return status.replaceChildren(h('div', { class: 'notice' }, 'Pick the endpoint the step calls.'));
+      try {
+        editing.extraParts(extra.value);
+      } catch (e) {
+        return status.replaceChildren(h('div', { class: 'notice' }, e.message));
+      }
       onSave({
         kind: 'call',
         name: name.value.trim(),
@@ -1276,19 +1301,27 @@
         with: [...withArea.querySelectorAll('[data-name]')].map(r => ({ name: r.dataset.name, value: r.querySelector('input').value })),
         status: status_.value,
         checks: [...checkRows.children].map(r => ({ path: r.children[0].value.trim(), op: r.children[1].value, value: r.children[2].value })).filter(c => c.path && c.path !== '$.'),
-        saves: [...saveRows.children].map(r => ({ name: r.children[0].value.trim(), path: r.children[1].value.trim() })).filter(s => s.name && s.path)
+        saves: [...saveRows.children].map(r => ({ name: r.children[0].value.trim(), path: r.children[1].value.trim() })).filter(s => s.name && s.path),
+        extra: extra.value
       });
     } },
       h('div', { class: 'form' }, h('label', { for: 'step-kind' }, 'Step'), kind),
       callPart, sleepPart,
-      h('div', { class: 'actions' }, h('button', { type: 'submit', class: 'button primary' }, 'Save'), onCancel ? h('button', { type: 'button', class: 'button', onclick: onCancel }, 'Cancel') : null),
+      h('div', { class: 'actions' }, h('button', { type: 'submit', class: 'button primary' }, 'Save'), onCancel ? h('button', { type: 'button', class: 'button', onclick: onCancel }, 'Cancel') : null,
+        onYaml ? h('span', { class: 'spacer' }) : null, onYaml ? h('button', { type: 'button', class: 'button', onclick: onYaml }, 'Edit as YAML') : null),
       status);
   }
 
-  function stepEditView({ file, index }) {
+  function stepEditView({ file, index, line }) {
     const back = { kind: 'workflow', file };
-    return editorShell(index === null ? 'Add a step' : `Edit step ${index + 1}`, file, source => {
+    // From the diagram and the list a step is known by its line: inspect counts the steps of a sequence too.
+    const title = index === null ? 'Add a step' : index === undefined ? 'Edit a step' : `Edit step ${index + 1}`;
+    return editorShell(title, file, source => {
       const blocks = (source.inspect?.blocks ?? []).filter(b => b.kind === 'step');
+      if (index === undefined) {
+        index = blocks.findIndex(b => b.start.line <= line && line <= b.end.line);
+        if (index < 0) return h('div', { class: 'notice' }, 'This step is no longer in the file.');
+      }
       const endpoints = source.inspect?.endpoints ?? [];
       const status = h('div', { 'aria-live': 'polite' });
       let initial = { kind: 'call', call: endpoints[0]?.name };
@@ -1296,9 +1329,12 @@
         initial = editing.stepFromSource(source.inspect?.source?.steps?.[index]);
         if (initial.unsupported) return yamlOnly('step', file, { reasons: initial.unsupported, key: { kind: 'step', index } }, back);
       }
-      return stepForm({
+      const block = index === null ? null : blocks[index];
+      const blockText = block ? source.text.split('\n').slice(block.start.line - 1, block.end.line).join('\n') : '';
+      const form = stepForm({
         endpoints, initial, status,
         onCancel: () => select(back),
+        onYaml: block ? () => select({ kind: 'yaml', file, block: { kind: 'step', index }, back }) : null,
         onSave: async step => {
           const block = index === null ? blocks[blocks.length - 1] : blocks[index];
           const yaml = editing.stepYaml(step, editing.indentOf(block));
@@ -1309,6 +1345,9 @@
           }
         }
       });
+      return h('div', null,
+        /(^|\s)#/.test(blockText) ? h('div', { class: 'notice info' }, 'The comments inside this step are not kept when it is saved from the form; those around it are. Use Edit as YAML to keep them.') : null,
+        form);
     });
   }
 

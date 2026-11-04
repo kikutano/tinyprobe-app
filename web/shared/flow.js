@@ -166,7 +166,10 @@
   // --- Drawing -------------------------------------------------------------------------------------------------
 
   const NODE_X = 8;
-  const NODE_W = 600;
+  // The steps are as wide as the place the flow is drawn in, at the page's own text size: a picture scaled to
+  // fit made its text bigger than the page's, and left it narrower than what is around it.
+  const DEFAULT_W = 600;
+  const MIN_W = 420;
   const LINE = 20;
   /** The width of a character of the 13.5px text, to wrap values and shorten names inside a node. */
   const CHAR = 7.9;
@@ -201,6 +204,21 @@
   function createFlow(root, model, { onSelect, selected = null } = {}) {
     let states = [];
     let current = selected;
+    let NODE_W = DEFAULT_W;
+
+    /** The width of a step box for the width of `root`, or the default when it is not laid out yet. */
+    function fit() {
+      const room = Math.floor(root.clientWidth || 0);
+      return room > 0 ? Math.max(MIN_W, room - NODE_X - 8) : DEFAULT_W;
+    }
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const watch = new ResizeObserver(() => {
+        if (!root.isConnected) return watch.disconnect();
+        if (fit() !== NODE_W) draw();
+      });
+      watch.observe(root);
+    }
 
     function reset() {
       states = model.nodes.map(() => ({ status: 'pending', attempt: 1, item: null, items: null, result: null }));
@@ -241,6 +259,7 @@
 
     function draw() {
       const nodes = model.nodes;
+      NODE_W = fit();
       // Values are colored, the same color where a value is saved and where it is used: no lines between steps,
       // "uses" and "saves" say it, and the color matches them at a glance.
       const colors = laneColors(model.lanes, laneColumns(model.lanes));
@@ -254,7 +273,7 @@
         tops.push(y);
         y += heights[i] + GAP;
       });
-      const width = NODE_X + NODE_W + 16;
+      const width = NODE_X + NODE_W + 8;
       const height = Math.max(y, 40);
 
       const picture = svg('svg', { viewBox: `0 0 ${width} ${height}`, width, height, class: 'flow-svg', role: 'list', 'aria-label': 'The steps of the workflow and the values they pass on' });

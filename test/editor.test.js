@@ -131,7 +131,6 @@ test('a step is written as YAML, several operators on one path in one mapping', 
 });
 
 test('what the form does not show comes back as YAML, under the keys of the step', () => {
-  assert.deepEqual(editor.stepFromSource({ use: 'log-in.yaml' }), { unsupported: ['use'] });
   assert.deepEqual(editor.stepFromSource({ sleep: '1s' }), { kind: 'sleep', sleep: '1s' });
   const form = editor.stepFromSource({
     name: 'Wait for the report',
@@ -212,6 +211,21 @@ test('what the form does not show comes back as YAML, under the keys of the step
     '        cookie: XSRF',
     ''
   ].join('\n'));
+});
+
+test('a use step runs a sequence with its params, the rest as YAML', () => {
+  const form = editor.stepFromSource({ name: 'Admin', use: '../sequences/log-in.yaml', with: { password: 'secret', roles: ['admin'] } });
+  assert.deepEqual(form, {
+    kind: 'use', name: 'Admin', use: '../sequences/log-in.yaml',
+    with: [{ name: 'password', value: 'secret' }],
+    extra: 'with:\n  roles:\n    - admin\n'
+  });
+  assert.equal(editor.stepYaml(form, 2), '  - name: Admin\n    use: ../sequences/log-in.yaml\n    with:\n      password: secret\n      roles:\n        - admin\n');
+  assert.equal(editor.stepYaml({ kind: 'use', use: 'log-in.yaml', with: [{ name: 'user', value: '' }] }, 2), '  - use: log-in.yaml\n');
+  assert.throws(() => editor.stepYaml({ kind: 'use', use: 'log-in.yaml', extra: 'save:\n  x: $.id\n' }, 2), /A use step has no expect or save/);
+  assert.deepEqual(editor.stepFromSource({ with: { a: 1 } }), { unsupported: ['no call'] });
+  assert.equal(editor.resolvePath('workflows/smoke.yaml', '../sequences/log-in.yaml'), 'sequences/log-in.yaml');
+  assert.equal(editor.resolvePath('smoke.yaml', './log-in.yaml'), 'log-in.yaml');
 });
 
 test('checks on headers, cookies and duration are written under their keys', () => {

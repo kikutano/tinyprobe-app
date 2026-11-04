@@ -1224,9 +1224,27 @@
     return names.map(n => ({ name: n, value: given.find(g => g.name === n)?.value ?? '', required: (endpoint?.params ?? []).some(p => p.name === n && p.required) }));
   }
 
-  /** The form of one step: a call with its values, expected status, checks and saves; or a wait. */
-  function stepForm({ endpoints, initial, onSave, onCancel, onYaml, status }) {
-    const kind = control('select', { id: 'step-kind' }, h('option', { value: 'call', selected: initial.kind !== 'sleep' }, 'Call an endpoint'), h('option', { value: 'sleep', selected: initial.kind === 'sleep' }, 'Wait'));
+  /**
+   * The form of one step: a call with its values, expected status, checks and saves; a sequence run with `use`
+   * and its params; or a wait. `sequences` ({ path, name, params }) and `file`, the workflow, offer `use`.
+   */
+  function stepForm({ endpoints, sequences = [], file = null, initial, onSave, onCancel, onYaml, status }) {
+    const offersUse = file !== null && (sequences.length > 0 || initial.kind === 'use');
+    const kind = control('select', { id: 'step-kind' },
+      h('option', { value: 'call', selected: initial.kind === 'call' || !initial.kind }, 'Call an endpoint'),
+      offersUse ? h('option', { value: 'use', selected: initial.kind === 'use' }, 'Run a sequence') : null,
+      h('option', { value: 'sleep', selected: initial.kind === 'sleep' }, 'Wait'));
+    // The sequence as written in the file, relative to the workflow; one not found keeps its path.
+    const written = initial.kind === 'use' ? initial.use : null;
+    const known = written !== null && sequences.some(q => q.path === editing.resolvePath(file, written));
+    const sequence = control('select', { id: 'step-use' },
+      written !== null && !known ? h('option', { value: written, selected: true }, `${written}  (not found)`) : null,
+      sequences.map(q => {
+        const path = editing.relativePath(file ?? '', q.path);
+        return h('option', { value: path, selected: written !== null && editing.resolvePath(file, written) === q.path }, `${q.name}  (${q.path})`);
+      }));
+    const useArea = h('div', { class: 'rows' });
+    let usedGiven = initial.kind === 'use' ? initial.with ?? [] : [];
     const name = control('input', { id: 'step-name', value: initial.name ?? '', placeholder: 'What this step checks, e.g. The user can be read' });
     const call = control('select', { id: 'step-call' }, endpoints.map(e => h('option', { value: e.name, selected: initial.call === e.name }, `${e.name}  (${e.method} ${e.path})`)));
     const sleep = control('input', { id: 'step-sleep', value: initial.sleep ?? '1s', placeholder: '1s, 500ms' });
@@ -1236,7 +1254,7 @@
     const saveRows = h('div', { class: 'rows' });
     const extra = control('textarea', { id: 'step-extra', class: 'textarea', rows: Math.min(Math.max((initial.extra ?? '').split('\n').length + 1, 4), 24), placeholder: 'until:\n  every: 1s\n  timeout: 30s' });
     extra.value = initial.extra ?? '';
-    let given = initial.with ?? [];
+    let given = initial.kind === 'use' ? [] : initial.with ?? [];
 
     const drawWith = () => {
       const endpoint = endpoints.find(e => e.name === call.value);
@@ -1246,6 +1264,22 @@
         control('input', { id: `with-${r.name}`, value: r.value, placeholder: state.variables.includes(r.name) ? 'from the environment' : r.required ? 'required' : 'empty: a value saved by an earlier step, or not sent' }),
         h('span'))));
     };
+    // The params of the sequence: required ones marked, the others with their default as the placeholder.
+    const drawUse = () => {
+      const picked = sequences.find(q => q.path === editing.resolvePath(file ?? '', sequence.value));
+      usedGiven = [...useArea.querySelectorAll('[data-name]')].map(r => ({ name: r.dataset.name, value: r.querySelector('input').value })).concat(usedGiven.filter(g => !useArea.querySelector(`[data-name="${CSS.escape(g.name)}"]`)));
+      const params = picked?.params ?? [];
+      const names = [...params.map(p => p.name), ...usedGiven.map(g => g.name).filter(n => !params.some(p => p.name === n))];
+      useArea.replaceChildren(...names.map(n => {
+        const param = params.find(p => p.name === n);
+        return h('div', { class: 'row', 'data-name': n },
+          h('label', { class: 'mono', for: `use-${n}` }, n, param?.required ? h('span', { class: 'required' }, '*') : null),
+          control('input', { id: `use-${n}`, value: usedGiven.find(g => g.name === n)?.value ?? '', placeholder: param?.required ? 'required' : param ? `empty: the default, ${JSON.stringify(param.default)}` : 'not a param of this sequence' }),
+          h('span'));
+      }));
+      if (names.length === 0) useArea.append(h('div', { class: 'aside' }, 'This sequence has no params.'));
+    };
+    sequence.addEventListener('change', drawUse);
     // A check reads the body by a JSONPath, a header or a cookie by its name, or the time of the response.
     const checkHints = {
       body: ['$.id', 'JSONPath of the value', 'value'],
@@ -1290,36 +1324,48 @@
     (initial.saves ?? []).forEach(addSave);
     call.addEventListener('change', drawWith);
 
+    const nameLabel = h('label', { for: 'step-name' }, 'Name');
+    const usePart = h('div', { class: 'form' },
+      h('label', { for: 'step-use' }, 'Sequence'), sequence,
+      h('label', null, 'Values'), useArea,
+      h('div', { class: 'hint' }, 'The steps of the sequence run here, with these values for its params; what they save is seen by the next steps.'));
     const callPart = h('div', null,
       h('div', { class: 'form' },
-        h('label', { for: 'step-name' }, 'Name'), name,
         h('label', { for: 'step-call' }, 'Endpoint'), call,
         h('label', null, 'Values'), withArea,
         h('label', { for: 'step-status' }, 'Status'), status_,
         h('label', null, 'Checks'), h('div', null, checkRows, h('button', { type: 'button', class: 'button small', onclick: () => addCheck() }, '+ Check')),
         h('div', { class: 'hint' }, 'A check reads the JSON body by its path ($.id, $.items[0].name, $ for all of it), a header or a cookie by its name, or the duration of the response (< 500ms). "is one of" takes values separated by commas.'),
         h('label', null, 'Save'), h('div', null, saveRows, h('button', { type: 'button', class: 'button small', onclick: () => addSave() }, '+ Save a value')),
-        h('div', { class: 'hint' }, 'A saved value is used by the next steps as ${name}: a token, an id.')),
-      h('details', { class: 'more step-extra', open: Boolean(initial.extra) },
-        h('summary', null, initial.extra ? 'More of this step, in YAML' : 'More, in YAML: until, for_each, schema checks…'),
-        h('p', { class: 'aside' }, 'What the form does not show, with the keys of the step: until, for_each, schema and any checks, saving a cookie. It is written with the form, under the same keys.'),
-        extra));
+        h('div', { class: 'hint' }, 'A saved value is used by the next steps as ${name}: a token, an id.')));
+    const extraPart = h('details', { class: 'more step-extra', open: Boolean(initial.extra) },
+      h('summary', null, initial.extra ? 'More of this step, in YAML' : 'More, in YAML: until, for_each, schema checks…'),
+      h('p', { class: 'aside' }, 'What the form does not show, with the keys of the step: until, for_each, schema and any checks, saving a cookie. It is written with the form, under the same keys.'),
+      extra);
     const sleepPart = h('div', { class: 'form' }, h('label', { for: 'step-sleep' }, 'Wait'), sleep);
-    const toggle = () => { callPart.hidden = kind.value !== 'call'; sleepPart.hidden = kind.value !== 'sleep'; };
+    const toggle = () => {
+      callPart.hidden = kind.value !== 'call';
+      usePart.hidden = kind.value !== 'use';
+      sleepPart.hidden = kind.value !== 'sleep';
+      extraPart.hidden = kind.value === 'sleep';
+      nameLabel.hidden = name.hidden = kind.value === 'sleep';
+      name.placeholder = kind.value === 'use' ? "Empty: the sequence's own name in the report" : 'What this step checks, e.g. The user can be read';
+    };
     kind.addEventListener('change', toggle);
     drawWith();
+    drawUse();
     toggle();
 
     return h('form', { onsubmit: event => {
       event.preventDefault();
       if (kind.value === 'sleep') return onSave({ kind: 'sleep', sleep: sleep.value });
-      if (!call.value) return status.replaceChildren(h('div', { class: 'notice' }, 'Pick the endpoint the step calls.'));
-      try {
-        editing.extraParts(extra.value);
-      } catch (e) {
-        return status.replaceChildren(h('div', { class: 'notice' }, e.message));
-      }
-      onSave({
+      const step = kind.value === 'use' ? {
+        kind: 'use',
+        name: name.value.trim(),
+        use: sequence.value,
+        with: [...useArea.querySelectorAll('[data-name]')].map(r => ({ name: r.dataset.name, value: r.querySelector('input').value })),
+        extra: extra.value
+      } : {
         kind: 'call',
         name: name.value.trim(),
         call: call.value,
@@ -1329,10 +1375,19 @@
           .filter(c => c.on === 'duration' ? c.value.trim() !== '' : c.path && c.path !== '$.'),
         saves: [...saveRows.children].map(r => ({ name: r.children[0].value.trim(), path: r.children[1].value.trim() })).filter(s => s.name && s.path),
         extra: extra.value
-      });
+      };
+      if (step.kind === 'call' && !step.call) return status.replaceChildren(h('div', { class: 'notice' }, 'Pick the endpoint the step calls.'));
+      if (step.kind === 'use' && !step.use) return status.replaceChildren(h('div', { class: 'notice' }, 'Pick the sequence the step runs.'));
+      // The YAML typed in the box is checked here, so a mistake is shown before anything is written.
+      try {
+        editing.stepYaml(step, 0);
+      } catch (e) {
+        return status.replaceChildren(h('div', { class: 'notice' }, e.message));
+      }
+      onSave(step);
     } },
-      h('div', { class: 'form' }, h('label', { for: 'step-kind' }, 'Step'), kind),
-      callPart, sleepPart,
+      h('div', { class: 'form' }, h('label', { for: 'step-kind' }, 'Step'), kind, nameLabel, name),
+      callPart, usePart, sleepPart, extraPart,
       h('div', { class: 'actions' }, h('button', { type: 'submit', class: 'button primary' }, 'Save'), onCancel ? h('button', { type: 'button', class: 'button', onclick: onCancel }, 'Cancel') : null,
         onYaml ? h('span', { class: 'spacer' }) : null, onYaml ? h('button', { type: 'button', class: 'button', onclick: onYaml }, 'Edit as YAML') : null),
       status);
@@ -1357,8 +1412,9 @@
       }
       const block = index === null ? null : blocks[index];
       const blockText = block ? source.text.split('\n').slice(block.start.line - 1, block.end.line).join('\n') : '';
+      const sequences = state.model.sequences.map(q => ({ path: q.path, name: q.name, params: q.inspect.params ?? [] }));
       const form = stepForm({
-        endpoints, initial, status,
+        endpoints, sequences, file, initial, status,
         onCancel: () => select(back),
         onYaml: block ? () => select({ kind: 'yaml', file, block: { kind: 'step', index }, back }) : null,
         onSave: async step => {

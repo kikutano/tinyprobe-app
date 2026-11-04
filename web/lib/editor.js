@@ -201,15 +201,16 @@
     // In a value or a check, null is the YAML null: an empty field would mean "not sent" or "".
     const shown = value => value === null ? 'null' : display(value);
     if (isMapping(step) && Object.keys(step).length === 1 && step.sleep !== undefined) return { kind: 'sleep', sleep: display(step.sleep) };
-    if (!isMapping(step) || step.use !== undefined) return { unsupported: ['use'] };
-    if (step.call === undefined) return { unsupported: ['no call'] };
+    if (!isMapping(step) || (step.call === undefined && step.use === undefined)) return { unsupported: ['no call'] };
     const extra = {};
     const put = (keys, value) => {
       let at = extra;
       for (const key of keys.slice(0, -1)) at = at[key] ??= {};
       at[keys[keys.length - 1]] = value;
     };
-    for (const [key, value] of Object.entries(step)) if (!['name', 'call', 'with', 'expect', 'save'].includes(key)) put([key], value);
+    const yamlOf = () => Object.keys(extra).length > 0 ? toYaml(extra, 0).replace(/^\n/, '') + '\n' : '';
+    const known = step.use !== undefined ? ['name', 'use', 'with'] : ['name', 'call', 'with', 'expect', 'save'];
+    for (const [key, value] of Object.entries(step)) if (!known.includes(key)) put([key], value);
 
     const withValues = [];
     if (step.with !== undefined && !isMapping(step.with)) put(['with'], step.with);
@@ -217,6 +218,10 @@
       // An empty text is sent as it is, so its field shows the quotes: an empty field is a value not sent.
       if (isScalar(value)) withValues.push({ name, value: value === '' ? '""' : shown(value) });
       else put(['with', name], value);
+    }
+    // A use step runs a sequence: its path as written, relative to the workflow, and the sequence's params.
+    if (step.use !== undefined) {
+      return { kind: 'use', name: step.name === undefined ? '' : display(step.name), use: display(step.use), with: withValues, extra: yamlOf() };
     }
 
     const expect = isMapping(step.expect) ? step.expect : {};
@@ -263,7 +268,7 @@
       status,
       checks,
       saves,
-      extra: Object.keys(extra).length > 0 ? toYaml(extra, 0).replace(/^\n/, '') + '\n' : ''
+      extra: yamlOf()
     };
   }
 
@@ -343,6 +348,9 @@
     const deeper = ' '.repeat(indent + 4);
     const deepest = ' '.repeat(indent + 6);
     const extra = extraParts(step.extra);
+    if (step.kind === 'use' && extra.expect.length + extra.body.length + extra.headers.length + extra.cookies.length + extra.save.length > 0) {
+      throw new Error('A use step has no expect or save: the steps of the sequence check and save.');
+    }
     const lines = [];
     const push = line => lines.push(lines.length === 0 ? `${pad}- ${line}` : `${inner}${line}`);
     // Typed YAML keeps its own lines, moved to where its keys go.
@@ -350,7 +358,7 @@
       for (const block of blocks) for (const line of [...block.lines, ...block.body]) lines.push(line === '' ? '' : `${at}${line}`);
     };
     if (step.name) push(`name: ${scalar(step.name)}`);
-    push(`call: ${scalar(step.call)}`);
+    push(step.kind === 'use' ? `use: ${scalar(step.use)}` : `call: ${scalar(step.call)}`);
     typedBlocks(extra.step, inner);
     const withValues = (step.with ?? []).filter(w => w.name && w.value !== '');
     if (withValues.length > 0 || extra.with.length > 0) {
@@ -358,6 +366,7 @@
       for (const w of withValues) lines.push(`${deeper}${scalar(w.name)}: ${typed(w.value)}`);
       typedBlocks(extra.with, deeper);
     }
+    if (step.kind === 'use') return lines.join('\n') + '\n';
     const codes = String(step.status ?? '').split(',').map(c => c.trim()).filter(Boolean);
     const checks = (step.checks ?? []).filter(c => (c.on ?? 'body') === 'duration' ? String(c.value ?? '').trim() !== '' : c.path);
     const placed = on => checks.filter(c => (c.on ?? 'body') === on);
@@ -420,6 +429,16 @@
     return slug === '' ? null : `workflows/${slug}.yaml`;
   }
 
+  /** The path, relative to the root, of `relative` written in the file `from`: the inverse of relativePath. */
+  function resolvePath(from, relative) {
+    const parts = from.split('/').slice(0, -1);
+    for (const part of String(relative).replace(/\\/g, '/').split('/')) {
+      if (part === '..') parts.pop();
+      else if (part !== '.' && part !== '') parts.push(part);
+    }
+    return parts.join('/');
+  }
+
   /** The path of `target` relative to the folder of `from`, both relative to the same root, with `/`. */
   function relativePath(from, target) {
     const base = from.split('/').slice(0, -1);
@@ -434,7 +453,7 @@
   Object.assign(exports, {
     offsetOf, replaceBlock, removeBlock, insertAfter, swapBlocks, indentOf,
     display, requestFromSource, AUTH_KINDS, authFromSource, authSetYaml, checkAuthName, addAuthSet,
-    OPERATORS, CHECK_PLACES, DURATION_OPERATORS, stepFromSource, mappingBlocks, extraParts, stepYaml, newWorkflowFile, workflowFileName, relativePath
+    OPERATORS, CHECK_PLACES, DURATION_OPERATORS, stepFromSource, mappingBlocks, extraParts, stepYaml, newWorkflowFile, workflowFileName, relativePath, resolvePath
   });
 })(typeof module === 'object' && module.exports ? module.exports : (globalThis.tinyprobeEditor = {}),
   typeof module === 'object' && module.exports ? require('./core.js') : globalThis.tinyprobeCore);

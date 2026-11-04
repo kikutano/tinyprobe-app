@@ -1246,12 +1246,37 @@
         control('input', { id: `with-${r.name}`, value: r.value, placeholder: state.variables.includes(r.name) ? 'from the environment' : r.required ? 'required' : 'empty: a value saved by an earlier step, or not sent' }),
         h('span'))));
     };
-    const addCheck = (c = { path: '$.', op: 'eq', value: '' }) => {
-      const row = h('div', { class: 'row check-row' },
-        control('input', { value: c.path, placeholder: '$.id', 'aria-label': 'JSONPath of the value' }),
-        control('select', { 'aria-label': 'Condition' }, editing.OPERATORS.map(([k, label]) => h('option', { value: k, selected: c.op === k }, label))),
-        control('input', { value: c.value, placeholder: 'value', 'aria-label': 'Expected value' }),
+    // A check reads the body by a JSONPath, a header or a cookie by its name, or the time of the response.
+    const checkHints = {
+      body: ['$.id', 'JSONPath of the value', 'value'],
+      header: ['Content-Type', 'Name of the header', 'text'],
+      cookie: ['sid', 'Name of the cookie', 'text'],
+      duration: ['', '', '500ms, 2s']
+    };
+    const addCheck = (c = { on: 'body', path: '$.', op: 'eq', value: '' }) => {
+      const on = control('select', { 'aria-label': 'What the check reads' }, editing.CHECK_PLACES.map(([k, label]) => h('option', { value: k, selected: (c.on ?? 'body') === k }, label)));
+      const path = control('input', { value: c.path });
+      const op = control('select', { 'aria-label': 'Condition' });
+      const value = control('input', { value: c.value, 'aria-label': 'Expected value' });
+      const shape = () => {
+        const [example, label, expected] = checkHints[on.value];
+        const duration = on.value === 'duration';
+        path.hidden = duration;
+        path.placeholder = example;
+        path.setAttribute('aria-label', label);
+        value.placeholder = expected;
+        // A body path typed as "$." means nothing for a header: start it empty.
+        if (on.value !== 'body' && path.value === '$.') path.value = '';
+        if (on.value === 'body' && path.value === '') path.value = '$.';
+        const keep = op.value || c.op;
+        const allowed = editing.OPERATORS.filter(([k]) => !duration || editing.DURATION_OPERATORS.includes(k));
+        op.replaceChildren(...allowed.map(([k, label]) => h('option', { value: k, selected: keep === k }, label)));
+        row.classList.toggle('duration', duration);
+      };
+      const row = h('div', { class: 'row check-row' }, on, path, op, value,
         h('button', { type: 'button', class: 'icon-button', 'aria-label': 'Remove this check', onclick: () => row.remove() }, '✕'));
+      on.addEventListener('change', shape);
+      shape();
       checkRows.append(row);
     };
     const addSave = (s = { name: '', path: '$.' }) => {
@@ -1272,12 +1297,12 @@
         h('label', null, 'Values'), withArea,
         h('label', { for: 'step-status' }, 'Status'), status_,
         h('label', null, 'Checks'), h('div', null, checkRows, h('button', { type: 'button', class: 'button small', onclick: () => addCheck() }, '+ Check')),
-        h('div', { class: 'hint' }, 'A check reads a value of the JSON response by its path: $.id, $.items[0].name, $ for the whole body. "is one of" takes values separated by commas.'),
+        h('div', { class: 'hint' }, 'A check reads the JSON body by its path ($.id, $.items[0].name, $ for all of it), a header or a cookie by its name, or the duration of the response (< 500ms). "is one of" takes values separated by commas.'),
         h('label', null, 'Save'), h('div', null, saveRows, h('button', { type: 'button', class: 'button small', onclick: () => addSave() }, '+ Save a value')),
         h('div', { class: 'hint' }, 'A saved value is used by the next steps as ${name}: a token, an id.')),
       h('details', { class: 'more step-extra', open: Boolean(initial.extra) },
-        h('summary', null, initial.extra ? 'More of this step, in YAML' : 'More, in YAML: until, for_each, checks on headers…'),
-        h('p', { class: 'aside' }, 'What the form does not show, with the keys of the step: until, for_each, checks on headers, cookies or duration, schema checks. It is written with the form, under the same keys.'),
+        h('summary', null, initial.extra ? 'More of this step, in YAML' : 'More, in YAML: until, for_each, schema checks…'),
+        h('p', { class: 'aside' }, 'What the form does not show, with the keys of the step: until, for_each, schema and any checks, saving a cookie. It is written with the form, under the same keys.'),
         extra));
     const sleepPart = h('div', { class: 'form' }, h('label', { for: 'step-sleep' }, 'Wait'), sleep);
     const toggle = () => { callPart.hidden = kind.value !== 'call'; sleepPart.hidden = kind.value !== 'sleep'; };
@@ -1300,7 +1325,8 @@
         call: call.value,
         with: [...withArea.querySelectorAll('[data-name]')].map(r => ({ name: r.dataset.name, value: r.querySelector('input').value })),
         status: status_.value,
-        checks: [...checkRows.children].map(r => ({ path: r.children[0].value.trim(), op: r.children[1].value, value: r.children[2].value })).filter(c => c.path && c.path !== '$.'),
+        checks: [...checkRows.children].map(r => ({ on: r.children[0].value, path: r.children[1].value.trim(), op: r.children[2].value, value: r.children[3].value }))
+          .filter(c => c.on === 'duration' ? c.value.trim() !== '' : c.path && c.path !== '$.'),
         saves: [...saveRows.children].map(r => ({ name: r.children[0].value.trim(), path: r.children[1].value.trim() })).filter(s => s.name && s.path),
         extra: extra.value
       });

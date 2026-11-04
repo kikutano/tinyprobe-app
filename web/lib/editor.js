@@ -183,6 +183,10 @@
     ['contains', 'contains'], ['in', 'is one of'], ['matches', 'matches'], ['exists', 'exists']
   ];
   const OPERATOR_KEYS = OPERATORS.map(([key]) => key);
+  /** What a check of the form reads: the keys of `expect` it writes, with the word people see. */
+  const CHECK_PLACES = [['body', 'Body'], ['header', 'Header'], ['cookie', 'Cookie'], ['duration', 'Duration']];
+  const DURATION_OPERATORS = ['gt', 'gte', 'lt', 'lte'];
+  const isDuration = text => /^\d+(\.\d+)?(ms|s|m|h)$/.test(String(text).trim());
 
   const isMapping = value => value !== null && typeof value === 'object' && !Array.isArray(value);
   const isScalar = value => value === null || typeof value !== 'object';
@@ -223,18 +227,26 @@
       else if (Array.isArray(expect.status) && expect.status.every(isScalar)) status = expect.status.join(', ');
       else put(['expect', 'status'], expect.status);
     }
-    for (const [key, value] of Object.entries(expect)) if (!['status', 'body'].includes(key)) put(['expect', key], value);
+    for (const [key, value] of Object.entries(expect)) if (!['status', 'body', 'headers', 'cookies', 'duration'].includes(key)) put(['expect', key], value);
     const checks = [];
-    if (expect.body !== undefined && !isMapping(expect.body)) put(['expect', 'body'], expect.body);
-    for (const [path, condition] of Object.entries(isMapping(expect.body) ? expect.body : {})) {
-      // A path is in the form only when all its conditions are: its keys stay together, in one place.
-      const inForm = isMapping(condition)
-        ? Object.entries(condition).every(([op, value]) => OPERATOR_KEYS.includes(op) && (isScalar(value) || (op === 'in' && Array.isArray(value) && value.every(isScalar))))
-        : isScalar(condition);
-      if (!inForm) put(['expect', 'body', path], condition);
-      else if (isMapping(condition)) {
-        for (const [op, value] of Object.entries(condition)) checks.push({ path, op, value: op === 'in' && Array.isArray(value) ? value.map(shown).join(', ') : shown(value) });
-      } else checks.push({ path, op: 'eq', value: shown(condition) });
+    // Body, headers and cookies: a path or a name with a value or operators.
+    for (const [on, key] of [['body', 'body'], ['header', 'headers'], ['cookie', 'cookies']]) {
+      if (expect[key] !== undefined && !isMapping(expect[key])) put(['expect', key], expect[key]);
+      for (const [path, condition] of Object.entries(isMapping(expect[key]) ? expect[key] : {})) {
+        // A path is in the form only when all its conditions are: its keys stay together, in one place.
+        const inForm = isMapping(condition)
+          ? Object.entries(condition).every(([op, value]) => OPERATOR_KEYS.includes(op) && (isScalar(value) || (op === 'in' && Array.isArray(value) && value.every(isScalar))))
+          : isScalar(condition);
+        if (!inForm) put(['expect', key, path], condition);
+        else if (isMapping(condition)) {
+          for (const [op, value] of Object.entries(condition)) checks.push({ on, path, op, value: op === 'in' && Array.isArray(value) ? value.map(shown).join(', ') : shown(value) });
+        } else checks.push({ on, path, op: 'eq', value: shown(condition) });
+      }
+    }
+    if (expect.duration !== undefined) {
+      const inForm = isMapping(expect.duration) && Object.entries(expect.duration).every(([op, value]) => DURATION_OPERATORS.includes(op) && isScalar(value));
+      if (!inForm) put(['expect', 'duration'], expect.duration);
+      else for (const [op, value] of Object.entries(expect.duration)) checks.push({ on: 'duration', path: '', op, value: shown(value) });
     }
 
     const saves = [];
@@ -301,7 +313,7 @@
    * checks or save, after the form's own. Throws an Error with a message for the page.
    */
   function extraParts(text) {
-    const parts = { step: [], with: [], expect: [], body: [], save: [] };
+    const parts = { step: [], with: [], expect: [], body: [], headers: [], cookies: [], save: [] };
     const nested = (block, path) => {
       if (block.value !== '') throw new Error(`Write ${path}: with one key per line under it, so the form can add its own.`);
       return mappingBlocks(block.body.join('\n'));
@@ -311,7 +323,7 @@
       if (block.key === 'with' || block.key === 'save') parts[block.key].push(...nested(block, block.key));
       else if (block.key === 'expect') {
         for (const child of nested(block, 'expect')) {
-          if (child.key === 'body') parts.body.push(...nested(child, 'body'));
+          if (['body', 'headers', 'cookies'].includes(child.key)) parts[child.key].push(...nested(child, child.key));
           else parts.expect.push(child);
         }
       } else parts.step.push(block);
@@ -347,29 +359,40 @@
       typedBlocks(extra.with, deeper);
     }
     const codes = String(step.status ?? '').split(',').map(c => c.trim()).filter(Boolean);
-    const checks = (step.checks ?? []).filter(c => c.path);
-    if (codes.length > 0 || checks.length > 0 || extra.expect.length > 0 || extra.body.length > 0) {
+    const checks = (step.checks ?? []).filter(c => (c.on ?? 'body') === 'duration' ? String(c.value ?? '').trim() !== '' : c.path);
+    const placed = on => checks.filter(c => (c.on ?? 'body') === on);
+    const value = c => c.op === 'in'
+      ? `[${String(c.value).split(',').map(v => v.trim()).filter(Boolean).map(flowValue).join(', ')}]`
+      : c.op === 'exists' ? (/^false$/i.test(String(c.value).trim()) ? 'false' : 'true')
+      : isDuration(c.value) ? String(c.value).trim()
+      : flowValue(c.value);
+    // A path or a name with its conditions, then the typed YAML of the same key.
+    const section = (key, on, typedOnes) => {
+      const own = placed(on);
+      if (own.length === 0 && typedOnes.length === 0) return;
+      lines.push(`${deeper}${key}:`);
+      // Several operators on one path become one mapping: all of them must pass.
+      const byPath = new Map();
+      for (const c of own) byPath.set(c.path, [...(byPath.get(c.path) ?? []), c]);
+      for (const [path, conditions] of byPath) {
+        const plain = conditions.length === 1 && conditions[0].op === 'eq';
+        lines.push(plain
+          ? `${deepest}${scalar(path)}: ${typed(conditions[0].value)}`
+          : `${deepest}${scalar(path)}: { ${conditions.map(c => `${c.op}: ${value(c)}`).join(', ')} }`);
+      }
+      typedBlocks(typedOnes, deepest);
+    };
+    const typedExpect = extra.expect.length + extra.body.length + extra.headers.length + extra.cookies.length;
+    if (codes.length > 0 || checks.length > 0 || typedExpect > 0) {
       push('expect:');
       if (codes.length === 1) lines.push(`${deeper}status: ${codes[0]}`);
       else if (codes.length > 1) lines.push(`${deeper}status: [${codes.join(', ')}]`);
+      section('headers', 'header', extra.headers);
+      section('cookies', 'cookie', extra.cookies);
       typedBlocks(extra.expect, deeper);
-      if (checks.length > 0 || extra.body.length > 0) {
-        lines.push(`${deeper}body:`);
-        // Several operators on one path become one mapping: all of them must pass.
-        const byPath = new Map();
-        for (const c of checks) byPath.set(c.path, [...(byPath.get(c.path) ?? []), c]);
-        for (const [path, conditions] of byPath) {
-          const plain = conditions.length === 1 && conditions[0].op === 'eq';
-          const value = c => c.op === 'in'
-            ? `[${String(c.value).split(',').map(v => v.trim()).filter(Boolean).map(flowValue).join(', ')}]`
-            : c.op === 'exists' ? (/^false$/i.test(String(c.value).trim()) ? 'false' : 'true')
-            : flowValue(c.value);
-          lines.push(plain
-            ? `${deepest}${scalar(path)}: ${typed(conditions[0].value)}`
-            : `${deepest}${scalar(path)}: { ${conditions.map(c => `${c.op}: ${value(c)}`).join(', ')} }`);
-        }
-        typedBlocks(extra.body, deepest);
-      }
+      section('body', 'body', extra.body);
+      const duration = placed('duration');
+      if (duration.length > 0) lines.push(`${deeper}duration: { ${duration.map(c => `${c.op}: ${value(c)}`).join(', ')} }`);
     }
     const saves = (step.saves ?? []).filter(s => s.name && s.path);
     if (saves.length > 0 || extra.save.length > 0) {
@@ -411,7 +434,7 @@
   Object.assign(exports, {
     offsetOf, replaceBlock, removeBlock, insertAfter, swapBlocks, indentOf,
     display, requestFromSource, AUTH_KINDS, authFromSource, authSetYaml, checkAuthName, addAuthSet,
-    OPERATORS, stepFromSource, mappingBlocks, extraParts, stepYaml, newWorkflowFile, workflowFileName, relativePath
+    OPERATORS, CHECK_PLACES, DURATION_OPERATORS, stepFromSource, mappingBlocks, extraParts, stepYaml, newWorkflowFile, workflowFileName, relativePath
   });
 })(typeof module === 'object' && module.exports ? module.exports : (globalThis.tinyprobeEditor = {}),
   typeof module === 'object' && module.exports ? require('./core.js') : globalThis.tinyprobeCore);

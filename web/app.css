@@ -137,7 +137,7 @@ code, .mono { font-family: var(--mono); font-size: 0.92em; }
   display: flex; flex-direction: column; gap: 20px;
 }
 .view { max-width: 980px; width: 100%; }
-.results { max-width: 1180px; width: 100%; display: flex; flex-direction: column; gap: 14px; }
+.results { max-width: 980px; width: 100%; display: flex; flex-direction: column; gap: 14px; }
 .results:empty { display: none; }
 
 /* --- Sidebar tree -------------------------------------------------------------------------------------- */
@@ -248,7 +248,7 @@ code, .mono { font-family: var(--mono); font-size: 0.92em; }
 
 /* --- Steps of a workflow ------------------------------------------------------------------------------- */
 
-.step-table { list-style: none; margin: 14px 0 0; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); max-width: 860px; }
+.step-table { list-style: none; margin: 14px 0 0; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
 .step-table li { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-bottom: 1px solid var(--border); }
 .step-table li:last-child { border-bottom: none; }
 .step-number { width: 2.2em; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
@@ -318,8 +318,8 @@ code, .mono { font-family: var(--mono); font-size: 0.92em; }
 .segmented .button:first-child { border-radius: 6px 0 0 6px; }
 .segmented .button:last-child { border-radius: 0 6px 6px 0; border-left: none; }
 .segmented .button.active { background: var(--selected); color: var(--selected-fg); }
-.flow { margin-top: 14px; max-width: 760px; }
-.flow-details { margin-top: 14px; max-width: 760px; }
+.flow { margin-top: 14px; }
+.flow-details { margin-top: 14px; }
 .flow-details h2 { margin: 12px 0 4px; font-size: 0.95em; }
 .plain { list-style: none; margin: 0; padding: 0; }
 .plain li { padding: 1px 0; overflow-wrap: anywhere; }

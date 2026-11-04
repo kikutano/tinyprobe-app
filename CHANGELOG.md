@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **One width for a page.** The diagram, the list of steps and the result of a run or a request end where the buttons above them end. The diagram's steps fill that width at the page's text size; before, the picture was scaled to 760 pixels and its text came out bigger than the rest.
+
 ## 0.4.6
 
 - **Every step opens in the form.** What the form does not show (until, for_each, checks on headers, cookies or duration, schema checks, cookie saves) is in a YAML box at the bottom of the same form, kept as it is when the step is saved; before, one such key sent the whole step to YAML. Only use steps are still edited as YAML.

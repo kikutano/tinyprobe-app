@@ -4,7 +4,7 @@
    and the lane colors --lane-1 to --lane-8, with fallbacks that read on light and dark backgrounds. */
 
 .flow { overflow-x: auto; }
-.flow-svg { display: block; width: 100%; height: auto; font-family: inherit; }
+.flow-svg { display: block; font-family: inherit; }
 
 .flow-box { fill: var(--panel, var(--bg)); stroke: var(--border); stroke-width: 1.2; }
 .flow-node { cursor: pointer; }

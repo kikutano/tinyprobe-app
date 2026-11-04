@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.6
 
 - **Every step opens in the form.** What the form does not show (until, for_each, checks on headers, cookies or duration, schema checks, cookie saves) is in a YAML box at the bottom of the same form, kept as it is when the step is saved; before, one such key sent the whole step to YAML. Only use steps are still edited as YAML.
 - **Edit where you look at a step**: next to Run to here, in the detail of a step of the diagram and on each row of the list. Edit as YAML is one click away from the form.

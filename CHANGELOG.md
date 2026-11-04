@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Every step opens in the form.** What the form does not show (until, for_each, checks on headers, cookies or duration, schema checks, cookie saves) is in a YAML box at the bottom of the same form, kept as it is when the step is saved; before, one such key sent the whole step to YAML. Only use steps are still edited as YAML.
+- **Edit where you look at a step**: next to Run to here, in the detail of a step of the diagram and on each row of the list. Edit as YAML is one click away from the form.
+- A check against null, and a value that is an empty text, keep their meaning when a step is saved from the form; before, they became "" and a value not sent.
+
 ## 0.4.5
 
 - **License: GPL-3.0.** From this version tinyprobe-app is licensed under the GNU General Public License, version 3 (GPL-3.0-only): it stays free and open source, and a changed version can be shared only under the same license, with its source code. Releases up to 0.4.4 stay under the MIT License.

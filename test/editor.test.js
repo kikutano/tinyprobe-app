@@ -140,13 +140,21 @@ test('what the form does not show comes back as YAML, under the keys of the step
     until: { every: '1s', timeout: '30s' },
     expect: {
       status: 200,
-      headers: { 'Content-Type': { contains: 'json' } },
-      body: { '$.state': 'done', '$.owner': null, '$': { schema: 'report.json' } }
+      headers: { 'Content-Type': { contains: 'json' }, 'X-Mode': { any: ['a', { matches: '^b' }] } },
+      cookies: { sid: { exists: true } },
+      body: { '$.state': 'done', '$.owner': null, '$': { schema: 'report.json' } },
+      duration: { lt: '500ms' }
     },
     save: { csrf: { cookie: 'XSRF' }, url: '$.url' }
   });
   assert.deepEqual(form.with, [{ name: 'id', value: '${reportId}' }, { name: 'note', value: '""' }]);
-  assert.deepEqual(form.checks, [{ path: '$.state', op: 'eq', value: 'done' }, { path: '$.owner', op: 'eq', value: 'null' }]);
+  assert.deepEqual(form.checks, [
+    { on: 'body', path: '$.state', op: 'eq', value: 'done' },
+    { on: 'body', path: '$.owner', op: 'eq', value: 'null' },
+    { on: 'header', path: 'Content-Type', op: 'contains', value: 'json' },
+    { on: 'cookie', path: 'sid', op: 'exists', value: 'true' },
+    { on: 'duration', path: '', op: 'lt', value: '500ms' }
+  ]);
   assert.deepEqual(form.saves, [{ name: 'url', path: '$.url' }]);
   assert.equal(form.extra, [
     'until:',
@@ -157,12 +165,14 @@ test('what the form does not show comes back as YAML, under the keys of the step
     '    - a',
     '    - b',
     'expect:',
-    '  headers:',
-    '    Content-Type:',
-    '      contains: json',
     '  body:',
     '    $:',
     '      schema: report.json',
+    '  headers:',
+    '    X-Mode:',
+    '      any:',
+    '        - a',
+    '        - matches: ^b',
     'save:',
     '  csrf:',
     '    cookie: XSRF',
@@ -183,17 +193,49 @@ test('what the form does not show comes back as YAML, under the keys of the step
     '    expect:',
     '      status: 200',
     '      headers:',
-    '        Content-Type:',
-    '          contains: json',
+    '        Content-Type: { contains: "json" }',
+    '        X-Mode:',
+    '          any:',
+    '            - a',
+    '            - matches: ^b',
+    '      cookies:',
+    '        sid: { exists: true }',
     '      body:',
     '        $.state: done',
     '        $.owner: null',
     '        $:',
     '          schema: report.json',
+    '      duration: { lt: 500ms }',
     '    save:',
     '      url: $.url',
     '      csrf:',
     '        cookie: XSRF',
+    ''
+  ].join('\n'));
+});
+
+test('checks on headers, cookies and duration are written under their keys', () => {
+  const step = {
+    kind: 'call', call: 'ping',
+    checks: [
+      { on: 'header', path: 'Content-Type', op: 'eq', value: 'application/json' },
+      { on: 'header', path: 'Cache-Control', op: 'contains', value: 'no-store' },
+      { on: 'cookie', path: 'sid', op: 'exists', value: 'false' },
+      { on: 'duration', path: '', op: 'gte', value: '10ms' },
+      { on: 'duration', path: '', op: 'lt', value: '2s' },
+      { on: 'duration', path: '', op: 'lt', value: '' },
+      { on: 'header', path: '', op: 'eq', value: 'x' }
+    ]
+  };
+  assert.equal(editor.stepYaml(step, 2), [
+    '  - call: ping',
+    '    expect:',
+    '      headers:',
+    '        Content-Type: application/json',
+    '        Cache-Control: { contains: "no-store" }',
+    '      cookies:',
+    '        sid: { exists: false }',
+    '      duration: { gte: 10ms, lt: 2s }',
     ''
   ].join('\n'));
 });
@@ -204,7 +246,7 @@ test('YAML typed by hand goes where its keys say, its comments and indentation k
   assert.throws(() => editor.stepYaml({ ...step, extra: 'expect: { headers: {} }' }), /Write expect: with one key per line/);
   assert.throws(() => editor.stepYaml({ ...step, extra: 'name: x' }), /set in the form above/);
   assert.throws(() => editor.extraParts('- until'), /Line 1 of the YAML is not a key/);
-  assert.deepEqual(editor.extraParts(' \n'), { step: [], with: [], expect: [], body: [], save: [] });
+  assert.deepEqual(editor.extraParts(' \n'), { step: [], with: [], expect: [], body: [], headers: [], cookies: [], save: [] });
 });
 
 test('a new workflow has its imports and its first step', () => {

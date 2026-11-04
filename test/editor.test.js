@@ -155,10 +155,8 @@ test('what the form does not show comes back as YAML, under the keys of the step
     { on: 'duration', path: '', op: 'lt', value: '500ms' }
   ]);
   assert.deepEqual(form.saves, [{ name: 'url', path: '$.url' }]);
+  assert.deepEqual(form.until, { every: '1s', timeout: '30s', status: '', checks: [] });
   assert.equal(form.extra, [
-    'until:',
-    '  every: 1s',
-    '  timeout: 30s',
     'with:',
     '  tags:',
     '    - a',
@@ -180,15 +178,15 @@ test('what the form does not show comes back as YAML, under the keys of the step
   assert.equal(editor.stepYaml(form, 2), [
     '  - name: Wait for the report',
     '    call: get_report',
-    '    until:',
-    '      every: 1s',
-    '      timeout: 30s',
     '    with:',
     '      id: ${reportId}',
     '      note: ""',
     '      tags:',
     '        - a',
     '        - b',
+    '    until:',
+    '      every: 1s',
+    '      timeout: 30s',
     '    expect:',
     '      status: 200',
     '      headers:',
@@ -226,6 +224,48 @@ test('a use step runs a sequence with its params, the rest as YAML', () => {
   assert.deepEqual(editor.stepFromSource({ with: { a: 1 } }), { unsupported: ['no call'] });
   assert.equal(editor.resolvePath('workflows/smoke.yaml', '../sequences/log-in.yaml'), 'sequences/log-in.yaml');
   assert.equal(editor.resolvePath('smoke.yaml', './log-in.yaml'), 'log-in.yaml');
+});
+
+test('for_each and until are in the form when all of them is', () => {
+  const step = {
+    name: 'Cases', call: 'status',
+    for_each: [{ code: 200, note: ' padded ' }, { code: 404, note: '' }, { code: 503 }],
+    until: { status: 200, body: { '$.state': { in: ['done', 'failed'] } }, every: '100ms', timeout: '5s' },
+    expect: { status: '${code}' }
+  };
+  const form = editor.stepFromSource(step);
+  assert.deepEqual(form.forEach, {
+    kind: 'list', columns: ['code', 'note'],
+    items: [{ code: '200', note: '" padded "' }, { code: '404', note: '""' }, { code: '503' }]
+  });
+  assert.deepEqual(form.until, { every: '100ms', timeout: '5s', status: '200', checks: [{ on: 'body', path: '$.state', op: 'in', value: 'done, failed' }] });
+  assert.equal(form.extra, '');
+  assert.equal(editor.stepYaml(form, 2), [
+    '  - name: Cases',
+    '    call: status',
+    '    for_each:',
+    '      - { code: 200, note: " padded " }',
+    '      - { code: 404, note: "" }',
+    '      - { code: 503 }',
+    '    until:',
+    '      status: 200',
+    '      body:',
+    '        $.state: { in: ["done", "failed"] }',
+    '      every: 100ms',
+    '      timeout: 5s',
+    '    expect:',
+    '      status: ${code}',
+    ''
+  ].join('\n'));
+  assert.deepEqual(editor.stepFromSource({ call: 'a', for_each: '${users}' }).forEach, { kind: 'variable', value: '${users}' });
+  assert.deepEqual(editor.stepFromSource({ call: 'a', for_each: { file: 'cases.csv' } }).forEach, { kind: 'file', file: 'cases.csv' });
+  assert.equal(editor.stepYaml({ kind: 'call', call: 'a', forEach: { kind: 'variable', value: 'users' } }, 0), '- call: a\n  for_each: ${users}\n');
+  assert.equal(editor.stepYaml({ kind: 'call', call: 'a', forEach: { kind: 'file', file: 'cases.csv' } }, 0), '- call: a\n  for_each: { file: "cases.csv" }\n');
+  // Items with an object, or an until with a schema check, stay YAML whole.
+  const typed = editor.stepFromSource({ call: 'a', for_each: [{ user: { id: 1 } }], until: { body: { $: { schema: 'x.json' } } } });
+  assert.equal(typed.forEach, null);
+  assert.equal(typed.until, null);
+  assert.equal(typed.extra, 'for_each:\n  - user:\n      id: 1\nuntil:\n  body:\n    $:\n      schema: x.json\n');
 });
 
 test('checks on headers, cookies and duration are written under their keys', () => {

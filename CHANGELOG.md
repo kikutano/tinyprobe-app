@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **for_each and until in the step form.** Repeat: once, for each item of a table (a column per argument, a row per item), of a variable, or of a data file. Wait: call again until conditions hold, every so often, for at most so long, with a status and Body, Header or Cookie conditions. The YAML box keeps only schema and any checks, cookie saves, and values that are lists or objects.
 - **Use steps in the step form.** "Run a sequence" picks a sequence of the folder, written relative to the workflow, and shows its params as fields: required ones marked, the others with their default. A use step no longer opens as YAML only: every step of a workflow now opens in the form.
 - **Checks on headers, cookies and duration in the step form.** Each check row says what it reads: Body (a JSONPath), Header or Cookie (a name), or Duration (< 500ms). Steps with such checks open with them as rows instead of in the YAML box.
 

@@ -1287,8 +1287,8 @@
       cookie: ['sid', 'Name of the cookie', 'text'],
       duration: ['', '', '500ms, 2s']
     };
-    const addCheck = (c = { on: 'body', path: '$.', op: 'eq', value: '' }) => {
-      const on = control('select', { 'aria-label': 'What the check reads' }, editing.CHECK_PLACES.map(([k, label]) => h('option', { value: k, selected: (c.on ?? 'body') === k }, label)));
+    const addCheck = (c = { on: 'body', path: '$.', op: 'eq', value: '' }, rows = checkRows, places = editing.CHECK_PLACES) => {
+      const on = control('select', { 'aria-label': 'What the check reads' }, places.map(([k, label]) => h('option', { value: k, selected: (c.on ?? 'body') === k }, label)));
       const path = control('input', { value: c.path });
       const op = control('select', { 'aria-label': 'Condition' });
       const value = control('input', { value: c.value, 'aria-label': 'Expected value' });
@@ -1311,8 +1311,80 @@
         h('button', { type: 'button', class: 'icon-button', 'aria-label': 'Remove this check', onclick: () => row.remove() }, '✕'));
       on.addEventListener('change', shape);
       shape();
-      checkRows.append(row);
+      rows.append(row);
     };
+    const readChecks = rows => [...rows.children].map(r => ({ on: r.children[0].value, path: r.children[1].value.trim(), op: r.children[2].value, value: r.children[3].value }))
+      .filter(c => c.on === 'duration' ? c.value.trim() !== '' : c.path && c.path !== '$.');
+
+    // for_each: the items as a table (a column per argument), a variable holding a list, or a data file.
+    const repeat = control('select', { id: 'step-repeat' },
+      [['', 'Once'], ['list', 'For each item of a table'], ['variable', 'For each item of a variable'], ['file', 'For each line of a file']]
+        .map(([k, label]) => h('option', { value: k, selected: (initial.forEach?.kind ?? '') === k }, label)));
+    const itemsHead = h('tr');
+    const itemsBody = h('tbody');
+    const itemsTable = h('table', { class: 'items-table' }, h('thead', null, itemsHead), itemsBody);
+    const columnCell = name => h('th', null, h('div', { class: 'cell' },
+      control('input', { value: name, placeholder: 'argument', 'aria-label': 'Argument of each item' }),
+      h('button', { type: 'button', class: 'icon-button', 'aria-label': 'Remove this column', onclick: event => {
+        const at = [...itemsHead.children].indexOf(event.target.closest('th'));
+        itemsHead.children[at].remove();
+        for (const row of itemsBody.children) row.children[at].remove();
+      } }, '✕')));
+    const valueCell = value => h('td', null, control('input', { value: value ?? '', 'aria-label': 'Value for this item' }));
+    const addItem = (item = {}) => {
+      const names = [...itemsHead.querySelectorAll('input')].map(i => i.value);
+      const row = h('tr', null, names.map(n => valueCell(item[n])),
+        h('td', { class: 'row-end' }, h('button', { type: 'button', class: 'icon-button', 'aria-label': 'Remove this item', onclick: () => row.remove() }, '✕')));
+      itemsBody.append(row);
+    };
+    const addColumn = (name = '') => {
+      itemsHead.append(columnCell(name));
+      for (const row of itemsBody.children) row.insertBefore(valueCell(''), row.lastElementChild);
+    };
+    const listItems = initial.forEach?.kind === 'list' ? initial.forEach : { columns: [''], items: [{}] };
+    listItems.columns.forEach(name => addColumn(name));
+    listItems.items.forEach(item => addItem(item));
+    const variable = control('input', { id: 'step-each-variable', value: initial.forEach?.kind === 'variable' ? initial.forEach.value : '', placeholder: '${users}' });
+    const dataFile = control('input', { id: 'step-each-file', value: initial.forEach?.kind === 'file' ? initial.forEach.file : '', placeholder: '../data/cases.csv' });
+    const listArea = h('div', null, itemsTable, h('div', { class: 'actions tight' },
+      h('button', { type: 'button', class: 'button small', onclick: () => addItem() }, '+ Item'),
+      h('button', { type: 'button', class: 'button small', onclick: () => addColumn() }, '+ Column')));
+    const repeatArea = h('div', null, repeat, h('div', { class: 'repeat-detail' }, listArea, variable, dataFile));
+    const drawRepeat = () => {
+      listArea.hidden = repeat.value !== 'list';
+      variable.hidden = repeat.value !== 'variable';
+      dataFile.hidden = repeat.value !== 'file';
+    };
+    repeat.addEventListener('change', drawRepeat);
+    const readForEach = () => {
+      if (repeat.value === 'variable') return { kind: 'variable', value: variable.value };
+      if (repeat.value === 'file') return { kind: 'file', file: dataFile.value.trim() };
+      if (repeat.value !== 'list') return null;
+      const names = [...itemsHead.querySelectorAll('input')].map(i => i.value.trim());
+      return {
+        kind: 'list',
+        columns: names.filter(Boolean),
+        items: [...itemsBody.children].map(row => Object.fromEntries(names.map((n, i) => [n, row.children[i].querySelector('input').value]).filter(([n]) => n)))
+      };
+    };
+
+    // until: the call is sent again, every so often, until these conditions hold or the time is up.
+    const untilOn = h('input', { type: 'checkbox', id: 'step-until', checked: Boolean(initial.until) });
+    const every = control('input', { id: 'step-every', value: initial.until?.every ?? '', placeholder: '1s' });
+    const timeout = control('input', { id: 'step-timeout', value: initial.until?.timeout ?? '', placeholder: '30s' });
+    const untilStatus = control('input', { id: 'step-until-status', value: initial.until?.status ?? '', placeholder: 'any status while waiting' });
+    const untilRows = h('div', { class: 'rows' });
+    const untilPlaces = editing.CHECK_PLACES.filter(([k]) => k !== 'duration');
+    (initial.until?.checks ?? []).forEach(c => addCheck(c, untilRows, untilPlaces));
+    const untilArea = h('div', { class: 'until-detail' },
+      h('div', { class: 'inline-fields' },
+        h('label', { for: 'step-every' }, 'every'), every,
+        h('label', { for: 'step-timeout' }, 'for at most'), timeout,
+        h('label', { for: 'step-until-status' }, 'status'), untilStatus),
+      untilRows,
+      h('button', { type: 'button', class: 'button small', onclick: () => addCheck(undefined, untilRows, untilPlaces) }, '+ Condition'));
+    const drawUntil = () => { untilArea.hidden = !untilOn.checked; };
+    untilOn.addEventListener('change', drawUntil);
     const addSave = (s = { name: '', path: '$.' }) => {
       const row = h('div', { class: 'row' },
         control('input', { value: s.name, placeholder: 'userId', 'aria-label': 'Variable' }),
@@ -1320,7 +1392,7 @@
         h('button', { type: 'button', class: 'icon-button', 'aria-label': 'Remove this save', onclick: () => row.remove() }, '✕'));
       saveRows.append(row);
     };
-    (initial.checks ?? []).forEach(addCheck);
+    (initial.checks ?? []).forEach(c => addCheck(c));
     (initial.saves ?? []).forEach(addSave);
     call.addEventListener('change', drawWith);
 
@@ -1333,14 +1405,17 @@
       h('div', { class: 'form' },
         h('label', { for: 'step-call' }, 'Endpoint'), call,
         h('label', null, 'Values'), withArea,
+        h('label', { for: 'step-repeat' }, 'Repeat'), repeatArea,
+        h('div', { class: 'hint' }, "Each item's values are arguments of the call, like Values, and variables of the step (${code}). A variable holds a list saved by an earlier step; a file is a .csv or .json next to the workflow."),
+        h('label', { for: 'step-until' }, 'Wait'), h('div', null, h('label', { class: 'toggle', for: 'step-until' }, untilOn, ' Call again until these conditions hold'), untilArea),
         h('label', { for: 'step-status' }, 'Status'), status_,
         h('label', null, 'Checks'), h('div', null, checkRows, h('button', { type: 'button', class: 'button small', onclick: () => addCheck() }, '+ Check')),
         h('div', { class: 'hint' }, 'A check reads the JSON body by its path ($.id, $.items[0].name, $ for all of it), a header or a cookie by its name, or the duration of the response (< 500ms). "is one of" takes values separated by commas.'),
         h('label', null, 'Save'), h('div', null, saveRows, h('button', { type: 'button', class: 'button small', onclick: () => addSave() }, '+ Save a value')),
         h('div', { class: 'hint' }, 'A saved value is used by the next steps as ${name}: a token, an id.')));
     const extraPart = h('details', { class: 'more step-extra', open: Boolean(initial.extra) },
-      h('summary', null, initial.extra ? 'More of this step, in YAML' : 'More, in YAML: until, for_each, schema checks…'),
-      h('p', { class: 'aside' }, 'What the form does not show, with the keys of the step: until, for_each, schema and any checks, saving a cookie. It is written with the form, under the same keys.'),
+      h('summary', null, initial.extra ? 'More of this step, in YAML' : 'More, in YAML: schema and any checks, saving a cookie…'),
+      h('p', { class: 'aside' }, 'What the form does not show, with the keys of the step: schema and any checks, saving a cookie, values that are lists or objects. It is written with the form, under the same keys.'),
       extra);
     const sleepPart = h('div', { class: 'form' }, h('label', { for: 'step-sleep' }, 'Wait'), sleep);
     const toggle = () => {
@@ -1354,6 +1429,8 @@
     kind.addEventListener('change', toggle);
     drawWith();
     drawUse();
+    drawRepeat();
+    drawUntil();
     toggle();
 
     return h('form', { onsubmit: event => {
@@ -1371,8 +1448,9 @@
         call: call.value,
         with: [...withArea.querySelectorAll('[data-name]')].map(r => ({ name: r.dataset.name, value: r.querySelector('input').value })),
         status: status_.value,
-        checks: [...checkRows.children].map(r => ({ on: r.children[0].value, path: r.children[1].value.trim(), op: r.children[2].value, value: r.children[3].value }))
-          .filter(c => c.on === 'duration' ? c.value.trim() !== '' : c.path && c.path !== '$.'),
+        checks: readChecks(checkRows),
+        forEach: readForEach(),
+        until: untilOn.checked ? { every: every.value, timeout: timeout.value, status: untilStatus.value, checks: readChecks(untilRows) } : null,
         saves: [...saveRows.children].map(r => ({ name: r.children[0].value.trim(), path: r.children[1].value.trim() })).filter(s => s.name && s.path),
         extra: extra.value
       };

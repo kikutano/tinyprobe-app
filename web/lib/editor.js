@@ -198,8 +198,11 @@
    * A `use` step is another kind of step: { unsupported } and it is edited as YAML.
    */
   function stepFromSource(step) {
-    // In a value or a check, null is the YAML null: an empty field would mean "not sent" or "".
-    const shown = value => value === null ? 'null' : display(value);
+    // In a value or a check, null is the YAML null: an empty field would mean "not sent" or "". A text with
+    // spaces around it keeps its quotes, since a field is read without them.
+    const shown = value => value === null ? 'null'
+      : typeof value === 'string' && value !== '' && value.trim() !== value ? JSON.stringify(value)
+      : display(value);
     if (isMapping(step) && Object.keys(step).length === 1 && step.sleep !== undefined) return { kind: 'sleep', sleep: display(step.sleep) };
     if (!isMapping(step) || (step.call === undefined && step.use === undefined)) return { unsupported: ['no call'] };
     const extra = {};
@@ -209,7 +212,7 @@
       at[keys[keys.length - 1]] = value;
     };
     const yamlOf = () => Object.keys(extra).length > 0 ? toYaml(extra, 0).replace(/^\n/, '') + '\n' : '';
-    const known = step.use !== undefined ? ['name', 'use', 'with'] : ['name', 'call', 'with', 'expect', 'save'];
+    const known = step.use !== undefined ? ['name', 'use', 'with'] : ['name', 'call', 'with', 'expect', 'save', 'for_each', 'until'];
     for (const [key, value] of Object.entries(step)) if (!known.includes(key)) put([key], value);
 
     const withValues = [];
@@ -224,34 +227,70 @@
       return { kind: 'use', name: step.name === undefined ? '' : display(step.name), use: display(step.use), with: withValues, extra: yamlOf() };
     }
 
+    // The conditions of a mapping such as expect or until: what the form shows, and what it leaves as YAML.
+    const conditionsOf = container => {
+      const checks = [];
+      const rejected = [];
+      for (const [on, key] of [['body', 'body'], ['header', 'headers'], ['cookie', 'cookies']]) {
+        if (container[key] !== undefined && !isMapping(container[key])) rejected.push([[key], container[key]]);
+        for (const [path, condition] of Object.entries(isMapping(container[key]) ? container[key] : {})) {
+          // A path is in the form only when all its conditions are: its keys stay together, in one place.
+          const inForm = isMapping(condition)
+            ? Object.entries(condition).every(([op, value]) => OPERATOR_KEYS.includes(op) && (isScalar(value) || (op === 'in' && Array.isArray(value) && value.every(isScalar))))
+            : isScalar(condition);
+          if (!inForm) rejected.push([[key, path], condition]);
+          else if (isMapping(condition)) {
+            for (const [op, value] of Object.entries(condition)) checks.push({ on, path, op, value: op === 'in' && Array.isArray(value) ? value.map(shown).join(', ') : shown(value) });
+          } else checks.push({ on, path, op: 'eq', value: shown(condition) });
+        }
+      }
+      return { checks, rejected };
+    };
+    const statusOf = value => value === undefined ? ''
+      : isScalar(value) ? display(value)
+      : Array.isArray(value) && value.every(isScalar) ? value.join(', ')
+      : null;
+
     const expect = isMapping(step.expect) ? step.expect : {};
     if (step.expect !== undefined && !isMapping(step.expect)) put(['expect'], step.expect);
-    let status = '';
-    if (expect.status !== undefined) {
-      if (isScalar(expect.status)) status = display(expect.status);
-      else if (Array.isArray(expect.status) && expect.status.every(isScalar)) status = expect.status.join(', ');
-      else put(['expect', 'status'], expect.status);
+    let status = statusOf(expect.status);
+    if (status === null) {
+      put(['expect', 'status'], expect.status);
+      status = '';
     }
     for (const [key, value] of Object.entries(expect)) if (!['status', 'body', 'headers', 'cookies', 'duration'].includes(key)) put(['expect', key], value);
-    const checks = [];
-    // Body, headers and cookies: a path or a name with a value or operators.
-    for (const [on, key] of [['body', 'body'], ['header', 'headers'], ['cookie', 'cookies']]) {
-      if (expect[key] !== undefined && !isMapping(expect[key])) put(['expect', key], expect[key]);
-      for (const [path, condition] of Object.entries(isMapping(expect[key]) ? expect[key] : {})) {
-        // A path is in the form only when all its conditions are: its keys stay together, in one place.
-        const inForm = isMapping(condition)
-          ? Object.entries(condition).every(([op, value]) => OPERATOR_KEYS.includes(op) && (isScalar(value) || (op === 'in' && Array.isArray(value) && value.every(isScalar))))
-          : isScalar(condition);
-        if (!inForm) put(['expect', key, path], condition);
-        else if (isMapping(condition)) {
-          for (const [op, value] of Object.entries(condition)) checks.push({ on, path, op, value: op === 'in' && Array.isArray(value) ? value.map(shown).join(', ') : shown(value) });
-        } else checks.push({ on, path, op: 'eq', value: shown(condition) });
-      }
-    }
+    const read = conditionsOf(expect);
+    const checks = read.checks;
+    for (const [keys, value] of read.rejected) put(['expect', ...keys], value);
     if (expect.duration !== undefined) {
       const inForm = isMapping(expect.duration) && Object.entries(expect.duration).every(([op, value]) => DURATION_OPERATORS.includes(op) && isScalar(value));
       if (!inForm) put(['expect', 'duration'], expect.duration);
       else for (const [op, value] of Object.entries(expect.duration)) checks.push({ on: 'duration', path: '', op, value: shown(value) });
+    }
+
+    // for_each: a written list of items, a variable, or a data file. Items with lists or mappings stay YAML.
+    let forEach = null;
+    const items = step.for_each;
+    if (items !== undefined) {
+      if (typeof items === 'string') forEach = { kind: 'variable', value: items };
+      else if (isMapping(items) && Object.keys(items).length === 1 && typeof items.file === 'string') forEach = { kind: 'file', file: items.file };
+      else if (Array.isArray(items) && items.every(item => isMapping(item) && Object.values(item).every(isScalar))) {
+        const columns = [];
+        for (const item of items) for (const key of Object.keys(item)) if (!columns.includes(key)) columns.push(key);
+        forEach = { kind: 'list', columns, items: items.map(item => Object.fromEntries(Object.entries(item).map(([k, v]) => [k, v === '' ? '""' : shown(v)]))) };
+      } else put(['for_each'], items);
+    }
+
+    // until: in the form when all of it is; otherwise all of it stays YAML, so its keys stay together.
+    let until = null;
+    if (step.until !== undefined) {
+      const u = step.until;
+      const shape = isMapping(u) && Object.keys(u).every(k => ['every', 'timeout', 'status', 'body', 'headers', 'cookies'].includes(k)) &&
+        (u.every === undefined || isScalar(u.every)) && (u.timeout === undefined || isScalar(u.timeout)) && statusOf(u.status) !== null;
+      const conditions = shape ? conditionsOf(u) : null;
+      if (conditions && conditions.rejected.length === 0) {
+        until = { every: u.every === undefined ? '' : display(u.every), timeout: u.timeout === undefined ? '' : display(u.timeout), status: statusOf(u.status), checks: conditions.checks };
+      } else put(['until'], u);
     }
 
     const saves = [];
@@ -268,6 +307,8 @@
       status,
       checks,
       saves,
+      forEach,
+      until,
       extra: yamlOf()
     };
   }
@@ -359,6 +400,22 @@
     };
     if (step.name) push(`name: ${scalar(step.name)}`);
     push(step.kind === 'use' ? `use: ${scalar(step.use)}` : `call: ${scalar(step.call)}`);
+    const forEach = step.kind === 'call' ? step.forEach : null;
+    // A bare name is the variable of that name: users is written ${users}.
+    if (forEach?.kind === 'variable') push(`for_each: ${scalar(String(forEach.value).trim().replace(/^([A-Za-z_][A-Za-z0-9_]*)$/, '$${$1}'))}`);
+    else if (forEach?.kind === 'file') push(`for_each: { file: ${flowValue(forEach.file)} }`);
+    else if (forEach?.kind === 'list') {
+      // One item per line, as a flow mapping; an empty cell leaves the key out of that item.
+      const items = forEach.items ?? [];
+      if (items.length === 0) push('for_each: []');
+      else {
+        push('for_each:');
+        for (const item of items) {
+          const cells = Object.entries(item).filter(([key, v]) => key && String(v ?? '') !== '');
+          lines.push(`${deeper}- { ${cells.map(([key, v]) => `${scalar(key)}: ${flowValue(v)}`).join(', ')} }`.replace('{  }', '{}'));
+        }
+      }
+    }
     typedBlocks(extra.step, inner);
     const withValues = (step.with ?? []).filter(w => w.name && w.value !== '');
     if (withValues.length > 0 || extra.with.length > 0) {
@@ -367,17 +424,16 @@
       typedBlocks(extra.with, deeper);
     }
     if (step.kind === 'use') return lines.join('\n') + '\n';
-    const codes = String(step.status ?? '').split(',').map(c => c.trim()).filter(Boolean);
-    const checks = (step.checks ?? []).filter(c => (c.on ?? 'body') === 'duration' ? String(c.value ?? '').trim() !== '' : c.path);
-    const placed = on => checks.filter(c => (c.on ?? 'body') === on);
+    const codesOf = text => String(text ?? '').split(',').map(c => c.trim()).filter(Boolean);
+    const statusLine = codes => codes.length === 1 ? `${deeper}status: ${codes[0]}` : `${deeper}status: [${codes.join(', ')}]`;
+    const usable = list => (list ?? []).filter(c => (c.on ?? 'body') === 'duration' ? String(c.value ?? '').trim() !== '' : c.path);
     const value = c => c.op === 'in'
       ? `[${String(c.value).split(',').map(v => v.trim()).filter(Boolean).map(flowValue).join(', ')}]`
       : c.op === 'exists' ? (/^false$/i.test(String(c.value).trim()) ? 'false' : 'true')
       : isDuration(c.value) ? String(c.value).trim()
       : flowValue(c.value);
     // A path or a name with its conditions, then the typed YAML of the same key.
-    const section = (key, on, typedOnes) => {
-      const own = placed(on);
+    const section = (key, own, typedOnes) => {
       if (own.length === 0 && typedOnes.length === 0) return;
       lines.push(`${deeper}${key}:`);
       // Several operators on one path become one mapping: all of them must pass.
@@ -391,16 +447,33 @@
       }
       typedBlocks(typedOnes, deepest);
     };
+    const on = (list, place) => list.filter(c => (c.on ?? 'body') === place);
+
+    if (step.until) {
+      const conditions = usable(step.until.checks);
+      const codes = codesOf(step.until.status);
+      const every = String(step.until.every ?? '').trim();
+      const timeout = String(step.until.timeout ?? '').trim();
+      push('until:');
+      if (codes.length > 0) lines.push(statusLine(codes));
+      section('headers', on(conditions, 'header'), []);
+      section('cookies', on(conditions, 'cookie'), []);
+      section('body', on(conditions, 'body'), []);
+      if (every) lines.push(`${deeper}every: ${isDuration(every) ? every : scalar(every)}`);
+      if (timeout) lines.push(`${deeper}timeout: ${isDuration(timeout) ? timeout : scalar(timeout)}`);
+    }
+
+    const codes = codesOf(step.status);
+    const checks = usable(step.checks);
     const typedExpect = extra.expect.length + extra.body.length + extra.headers.length + extra.cookies.length;
     if (codes.length > 0 || checks.length > 0 || typedExpect > 0) {
       push('expect:');
-      if (codes.length === 1) lines.push(`${deeper}status: ${codes[0]}`);
-      else if (codes.length > 1) lines.push(`${deeper}status: [${codes.join(', ')}]`);
-      section('headers', 'header', extra.headers);
-      section('cookies', 'cookie', extra.cookies);
+      if (codes.length > 0) lines.push(statusLine(codes));
+      section('headers', on(checks, 'header'), extra.headers);
+      section('cookies', on(checks, 'cookie'), extra.cookies);
       typedBlocks(extra.expect, deeper);
-      section('body', 'body', extra.body);
-      const duration = placed('duration');
+      section('body', on(checks, 'body'), extra.body);
+      const duration = on(checks, 'duration');
       if (duration.length > 0) lines.push(`${deeper}duration: { ${duration.map(c => `${c.op}: ${value(c)}`).join(', ')} }`);
     }
     const saves = (step.saves ?? []).filter(s => s.name && s.path);

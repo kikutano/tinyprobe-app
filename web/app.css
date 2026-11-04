@@ -331,6 +331,20 @@ code, .mono { font-family: var(--mono); font-size: 0.92em; }
 .check-row { grid-template-columns: minmax(108px, 0.6fr) minmax(0, 1.2fr) minmax(0, 0.9fr) minmax(0, 1fr) auto; }
 /* The duration reads no path: its condition takes the path's place. */
 .check-row.duration { grid-template-columns: minmax(108px, 0.6fr) minmax(0, 0.9fr) minmax(0, 2.2fr) auto; }
+/* for_each items: a column per argument, a row per item. */
+.items-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.items-table th, .items-table td { padding: 2px 3px 2px 0; font-weight: normal; }
+.items-table .cell { display: flex; gap: 2px; align-items: center; }
+.items-table .cell .input { font-weight: 600; }
+.items-table .row-end { width: 30px; }
+.repeat-detail { margin-top: 6px; }
+.actions.tight { margin-top: 6px; }
+.until-detail { margin-top: 6px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.until-detail .rows { align-self: stretch; }
+label.toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.inline-fields { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+.inline-fields .input { width: 9em; }
+.inline-fields #step-until-status { width: 14em; }
 label.check { display: block; padding: 2px 0; font-family: var(--mono); font-size: 0.92em; }
 .step-table .icon-button:disabled { opacity: 0.35; cursor: default; }
 

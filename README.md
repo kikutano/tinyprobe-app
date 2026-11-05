@@ -70,7 +70,7 @@ A request sent on its own remembers nothing for the next one. Values that go fro
   <img src="media/editor.png" alt="The form of a workflow step: the endpoint it calls, the values it sends, the expected status 201, three checks on the response body, and the user id it saves for the next steps" width="49%">
 </p>
 
-No tinyprobe files yet? Ask your coding agent to write them from your backend, a Postman collection or an OpenAPI document: the prompts are in the [tinyprobe README](https://github.com/kikutano/tinyprobe#generate-tests-with-a-coding-agent).
+No tinyprobe files yet? Ask your coding agent to write them from your backend, a Postman collection or an OpenAPI document: the prompts are in the [tinyprobe README](https://github.com/kikutano/tinyprobe#migrate-with-your-ai).
 
 ## Which tinyprobe it uses
 

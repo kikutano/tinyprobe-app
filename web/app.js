@@ -526,7 +526,7 @@
       empty ? h('div', { class: 'notice info' },
         h('strong', null, 'No tinyprobe files here yet. '),
         'Add a request with + New request, or ask your coding agent to write them: the prompts are in the ',
-        h('a', { class: 'link', href: 'https://github.com/kikutano/tinyprobe#generate-tests-with-a-coding-agent', target: '_blank', rel: 'noreferrer' }, 'tinyprobe README'), '.') : null,
+        h('a', { class: 'link', href: 'https://github.com/kikutano/tinyprobe#migrate-with-your-ai', target: '_blank', rel: 'noreferrer' }, 'tinyprobe README'), '.') : null,
       h('p', { class: 'aside' }, 'A request sent from here remembers nothing for the next one. To pass a token or an id from one request to another, a workflow saves it with save: and every run starts from zero.'));
   }
 

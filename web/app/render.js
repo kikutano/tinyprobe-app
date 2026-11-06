@@ -18,7 +18,7 @@ import { sequenceView, workflowView } from './views/workflow.js';
 const FORMS = new Set(['new', 'new-workflow', 'edit-endpoint', 'edit-step', 'yaml', 'auth', 'environment']);
 
 export function holdsInput() {
-  return FORMS.has(state.selection.kind);
+  return FORMS.has(state.selection.kind) || Boolean(document.querySelector('#view form.duplicate:not([hidden])'));
 }
 
 export function render() {

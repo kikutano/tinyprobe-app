@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Duplicate a workflow**: ⧉ Duplicate, next to Diagram, List and Edit, asks for the name of the copy and saves it as a new file next to the original (`Users for admins` becomes `workflows/users-for-admins.yaml`), then opens it. The copy is the original as it is on disk, comments included, with only its `name:` changed: change what you need from there.
 - **Errors are shown again** (since 0.4.11): a save refused because the file changed on disk, a call or a run that failed, or a launcher that was restarted made the page stop with an error instead of saying what happened. A name the page's code needs was missing when it was split into modules in 0.4.11; a test now checks every module's imports.
 
 ## 0.4.13

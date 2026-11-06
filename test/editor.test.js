@@ -332,3 +332,17 @@ test('a step written by the form is read back by tinyprobe into the same form', 
   assert.equal(editor.stepYaml(back, 2), editor.stepYaml({ ...step, extra: '' }, 2));
   fs.rmSync(folder, { recursive: true });
 });
+
+test('a copy of a workflow gets its new name, next to the original, the rest as it was', () => {
+  const text = '# Users and their roles\nname: Users\ndescription: All of them\nimport: [../api/users.yaml]\nsteps:\n  - call: list_users   # first\n';
+  assert.equal(editor.renamedWorkflow(text, 'Users: admins only'),
+    '# Users and their roles\nname: "Users: admins only"\ndescription: All of them\nimport: [../api/users.yaml]\nsteps:\n  - call: list_users   # first\n');
+  assert.equal(editor.renamedWorkflow('name: >\n  A long\n  name\nsteps: []\n', 'Short'), 'name: Short\nsteps: []\n');
+  assert.equal(editor.renamedWorkflow('steps:\n  - call: ping\n', 'Ping'), 'name: Ping\nsteps:\n  - call: ping\n');
+  assert.equal(editor.renamedWorkflow('steps:\r\n  - call: ping\r\n', 'Ping'), 'name: Ping\r\nsteps:\r\n  - call: ping\r\n');
+  // A step's own name is not the workflow's.
+  assert.equal(editor.renamedWorkflow('steps:\n  - name: Log in\n    call: login\n', 'X'), 'name: X\nsteps:\n  - name: Log in\n    call: login\n');
+  assert.equal(editor.copyFileName('tinyprobe/workflows/users.yaml', 'Users (copy)'), 'tinyprobe/workflows/users-copy.yaml');
+  assert.equal(editor.copyFileName('smoke.yaml', 'Smoke 2'), 'smoke-2.yaml');
+  assert.equal(editor.copyFileName('workflows/a.yaml', '  !! '), null);
+});

@@ -1,5 +1,6 @@
 // A workflow and a sequence: the head, Run, the diagram and the list of steps.
-import { $, baseName, flows, h, recall, remember, runView, slash, state } from '../base.js';
+import { saveFile } from './editor.js';
+import { $, baseName, control, editing, flows, h, query, recall, remember, RestartError, runView, showMessage, slash, state, text } from '../base.js';
 import { item, renderView, select } from '../render.js';
 import { runWorkflow } from '../runs.js';
 import { model } from '../start.js';
@@ -14,6 +15,52 @@ export function pageHead(title, file, description) {
     h('span', { class: 'file-chip', title: 'The file in the opened folder' }, file),
     description ? h('p', { class: 'page-desc' }, description) : null);
 }
+
+/**
+ * Duplicate: a copy of the workflow under a new name, next to it, so its imports and uses stay right. Only the name
+ * changes in the file; the copy opens, ready to be changed.
+ */
+function duplicateForm(workflow) {
+  const name = control('input', { id: 'duplicate-name', class: 'input', value: `${workflow.name} (copy)` });
+  const status = h('div', { 'aria-live': 'polite' });
+  const save = h('button', { type: 'submit', class: 'button primary small' }, 'Duplicate');
+  const node = h('form', { class: 'duplicate', hidden: true, onsubmit: async event => {
+    event.preventDefault();
+    status.replaceChildren();
+    const target = editing.copyFileName(workflow.path, name.value);
+    if (!target) return status.append(h('div', { class: 'notice' }, 'Give the copy a name, e.g. Users for admins.'));
+    if (state.listing.files.some(f => f.path === target)) return status.append(h('div', { class: 'notice' }, `${target} already exists: choose another name.`));
+    save.disabled = true;
+    try {
+      const original = await text(`/api/file?${query({ root: state.root, path: workflow.path })}`);
+      if (await saveFile(target, editing.renamedWorkflow(original, name.value), null, status)) {
+        showMessage(`Created ${target}, a copy of ${workflow.path}.`, 'info');
+        select({ kind: 'workflow', file: target });
+      }
+    } catch (e) {
+      if (!(e instanceof RestartError)) status.append(h('div', { class: 'notice' }, e.message));
+    } finally {
+      save.disabled = false;
+    }
+  } },
+    h('label', { for: 'duplicate-name' }, 'Name of the copy'), name, save,
+    h('button', { type: 'button', class: 'button small', onclick: () => { node.hidden = true; } }, 'Cancel'),
+    h('div', { class: 'duplicate-file' }, ''),
+    status);
+  const file = node.querySelector('.duplicate-file');
+  const showFile = () => { const target = editing.copyFileName(workflow.path, name.value); file.textContent = target ? `File: ${target}` : ''; };
+  name.addEventListener('input', showFile);
+  showFile();
+  return {
+    node,
+    toggle() {
+      node.hidden = !node.hidden;
+      if (!node.hidden) { name.focus(); name.select(); }
+    }
+  };
+}
+
+let duplicate = null;
 
 export function workflowView({ file }) {
   const workflow = state.model.workflows.find(w => w.path === file);
@@ -84,7 +131,9 @@ export function workflowView({ file }) {
       h('div', { class: 'segmented', role: 'group', 'aria-label': 'Show the steps as' },
         h('button', { type: 'button', class: `button small${mode === 'diagram' ? ' active' : ''}`, 'aria-pressed': String(mode === 'diagram'), onclick: () => toggle('diagram') }, 'Diagram'),
         h('button', { type: 'button', class: `button small${mode === 'list' ? ' active' : ''}`, 'aria-pressed': String(mode === 'list'), onclick: () => toggle('list') }, 'List'),
-        state.info.editing ? h('button', { type: 'button', class: `button small${mode === 'edit' ? ' active' : ''}`, 'aria-pressed': String(mode === 'edit'), onclick: () => toggle('edit') }, 'Edit') : null)),
+        state.info.editing ? h('button', { type: 'button', class: `button small${mode === 'edit' ? ' active' : ''}`, 'aria-pressed': String(mode === 'edit'), onclick: () => toggle('edit') }, 'Edit') : null),
+      state.info.editing ? h('button', { type: 'button', class: 'button small', title: 'A copy of this workflow, to change what differs', onclick: () => duplicate.toggle() }, '⧉ Duplicate') : null),
+    state.info.editing ? (duplicate = duplicateForm(workflow)).node : null,
     content,
     mode === 'list' ? h('p', { class: 'aside' }, '▶ Up to here runs the steps before a step again each time, and stops at it: nothing is kept between runs.') : null);
 }

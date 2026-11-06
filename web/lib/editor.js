@@ -502,6 +502,25 @@
     return slug === '' ? null : `workflows/${slug}.yaml`;
   }
 
+  /**
+   * The text of a copy of a workflow named `name`: its top-level `name:` replaced (with the indented lines of a
+   * multi-line value), or added on top when it had none. The rest of the file, comments included, stays as it is.
+   */
+  function renamedWorkflow(text, name) {
+    const line = `name: ${scalar(String(name).trim())}`;
+    const found = /^name:[^\r\n]*(?:\r?\n[ \t]+[^\r\n]*)*/m.exec(text);
+    if (found) return text.slice(0, found.index) + line + text.slice(found.index + found[0].length);
+    return line + (text.includes('\r\n') ? '\r\n' : '\n') + text;
+  }
+
+  /** The file of a copy: next to the original, so its imports and uses stay right, and named after the copy. */
+  function copyFileName(original, name) {
+    const slug = String(name ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (slug === '') return null;
+    const folder = String(original).split('/').slice(0, -1).join('/');
+    return `${folder ? `${folder}/` : ''}${slug}.yaml`;
+  }
+
   /** The path, relative to the root, of `relative` written in the file `from`: the inverse of relativePath. */
   function resolvePath(from, relative) {
     const parts = from.split('/').slice(0, -1);
@@ -526,7 +545,7 @@
   Object.assign(exports, {
     offsetOf, replaceBlock, removeBlock, insertAfter, swapBlocks, indentOf,
     display, requestFromSource, AUTH_KINDS, authFromSource, authSetYaml, checkAuthName, addAuthSet,
-    OPERATORS, CHECK_PLACES, DURATION_OPERATORS, stepFromSource, mappingBlocks, extraParts, stepYaml, newWorkflowFile, workflowFileName, relativePath, resolvePath
+    OPERATORS, CHECK_PLACES, DURATION_OPERATORS, stepFromSource, mappingBlocks, extraParts, stepYaml, newWorkflowFile, workflowFileName, renamedWorkflow, copyFileName, relativePath, resolvePath
   });
 })(typeof module === 'object' && module.exports ? module.exports : (globalThis.tinyprobeEditor = {}),
   typeof module === 'object' && module.exports ? require('./core.js') : globalThis.tinyprobeCore);

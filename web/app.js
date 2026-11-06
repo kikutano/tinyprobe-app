@@ -308,6 +308,7 @@
     const sidebar = $('sidebar');
     const m = state.model;
     sidebar.hidden = !m;
+    $('nav-toggle').hidden = !m;
     if (!m) return;
 
     const selected = state.selection;
@@ -433,6 +434,7 @@
 
   function select(selection) {
     state.selection = selection;
+    setNav(false);
     renderSidebar();
     renderView();
     $('view').scrollIntoView({ block: 'start' });
@@ -883,7 +885,7 @@
         query: queryNames.value,
         body: body.value,
         headers: [...headerRows.children].map(row => ({ name: row.children[0].value.trim(), value: row.children[1].value })).filter(h => h.name || h.value),
-        defaults: [...defaultRows.children].map(row => ({ name: row.dataset.name, value: row.querySelector('input').value }))
+        defaults: [...defaultRows.querySelectorAll('[data-name]')].map(row => ({ name: row.dataset.name, value: row.querySelector('input').value }))
       };
     }
 
@@ -892,8 +894,12 @@
       keep(values);
       // The values a call can pass: every ${name} written in the request. A default makes it optional.
       const found = core.placeholders(values.path, values.body, ...values.headers.map(x => x.value), ...values.query.split(',').map(x => x.trim() ? `\${${x.trim()}}` : ''));
-      const current = new Map([...defaultRows.children].map(row => [row.dataset.name, row.querySelector('input').value]));
+      const current = new Map([...defaultRows.querySelectorAll('[data-name]')].map(row => [row.dataset.name, row.querySelector('input').value]));
       const remembered = new Map((draft.defaults ?? []).map(d => [d.name, d.value]));
+      if (found.length === 0) {
+        defaultRows.replaceChildren(h('div', { class: 'aside' }, 'Each ${name} of the path, the query and the body appears here, to give it a default.'));
+        return;
+      }
       defaultRows.replaceChildren(...found.map(argument => {
         const row = h('div', { class: 'row', 'data-name': argument },
           h('label', { class: 'mono', for: `default-${argument}` }, argument),
@@ -1634,7 +1640,7 @@
         return [
           h('label', { for: `env-${variable.name}` }, variable.name),
           h('div', { class: 'field' }, input,
-            secret ? h('button', { type: 'button', class: 'icon-button', title: 'Show or hide the value', 'aria-label': `Show or hide ${variable.name}`, onclick: () => { input.type = input.type === 'password' ? 'text' : 'password'; } }, '👁') : null,
+            secret ? h('button', { type: 'button', class: 'icon-button', title: 'Show or hide the value', 'aria-label': `Show or hide ${variable.name}`, onclick: () => { input.type = input.type === 'password' ? 'text' : 'password'; } }, '👁') : h('span', { class: 'icon-space' }),
             editable ? h('button', { type: 'button', class: 'button small', onclick: save }, 'Save') : h('span', { class: 'default' }, 'edit it in the file'),
             h('button', { type: 'button', class: 'icon-button', title: `Delete ${variable.name}`, 'aria-label': `Delete ${variable.name}`, onclick: () => {
               if (confirm(`Delete ${variable.name} from ${baseName(path)}?`)) write(envFile.removeVariable(content, variable), `${variable.name} deleted.`);
@@ -2096,6 +2102,15 @@
 
   // --- Events ----------------------------------------------------------------------------------------------
 
+  // The drawer of the files on a phone: under the top bar, closed by a choice, the backdrop or Escape.
+  function setNav(open) {
+    if (open) document.documentElement.style.setProperty('--topbar-height', `${document.querySelector('.topbar').offsetHeight}px`);
+    document.body.classList.toggle('nav-open', open);
+    $('nav-toggle').setAttribute('aria-expanded', String(open));
+  }
+  $('nav-toggle').addEventListener('click', () => setNav(!document.body.classList.contains('nav-open')));
+  $('nav-backdrop').addEventListener('click', () => setNav(false));
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') setNav(false); });
   $('folder-button').addEventListener('click', () => openFolderDialog());
   $('settings-button').addEventListener('click', openSettings);
   $('update-badge').addEventListener('click', openSettings);

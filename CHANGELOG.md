@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **On a phone**, the files of the folder are a drawer opened with ☰ instead of a box over half of the screen, and the diagram fits a narrow screen (from 280 pixels).
+- **One width for forms too**: the fields of a request, of the environment and of the editor end where the buttons above them end; in the environment, every field has the same length whether its value can be shown or not.
+- The sidebar's methods take the same width, so `delete_user` starts where `get_user` does; "Defaults" of a new request says what appears there instead of staying empty.
 - **A smaller download.** The page's HTML, CSS and JavaScript are stored gzipped inside the app and sent to the browser as they are: the executable is 168 KB smaller (3.73 MB to 3.56 MB on Linux), with the page taking 85 KB of it instead of 253 KB.
 
 ## 0.4.9

@@ -78,7 +78,7 @@ function workflowTable(workflows) {
           h('button', { type: 'button', class: 'link', onclick: () => select({ kind: 'workflow', file: workflow.path }) }, workflow.name),
           h('span', { class: 'file' }, `${workflow.path} · ${steps} ${steps === 1 ? 'step' : 'steps'}`)),
         h('span', { class: 'last', title: o?.environment ? `with ${o.environment}` : '' }, o
-          ? `${o.passed}/${o.total} passed${o.failed ? ` · ${o.failed} failed` : ''} · ${runView.formatDuration(o.duration)} · ${ago(o.at)}`
+          ? `${o.passed}/${o.total} passed${o.failed ? ` · ${o.failed} failed` : ''}${o.skipped ? ` · ${o.skipped} skipped` : ''} · ${runView.formatDuration(o.duration)} · ${ago(o.at)}`
           : 'not run yet'),
         h('button', { type: 'button', class: 'button small', title: `Run ${workflow.name}`, onclick: () => runWorkflow(workflow) }, '▶ Run'));
     })));

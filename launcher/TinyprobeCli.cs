@@ -19,6 +19,9 @@ internal sealed class TinyprobeCli(AppPaths paths)
     /// <summary>The first tinyprobe with `inspect --source`, which the visual editor reads files with.</summary>
     public const string Editing = "0.21.0";
 
+    /// <summary>The first tinyprobe with `run --skip`, which the steps turned off in the page are passed with.</summary>
+    public const string Skipping = "0.24.0";
+
     private const string Releases = "https://github.com/kikutano/tinyprobe/releases/latest/download";
 
     private readonly object _lock = new();

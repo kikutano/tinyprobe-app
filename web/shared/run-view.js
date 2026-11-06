@@ -169,6 +169,7 @@
           `${s.passed_steps}/${s.total_steps} steps passed`,
           s.failed_steps ? `${s.failed_steps} failed` : null,
           s.not_run_steps ? `${s.not_run_steps} not run` : null,
+          s.skipped_steps ? `${s.skipped_steps} skipped` : null,
           `${s.checks_passed + s.checks_failed} checks`,
           `${s.http_requests} requests`,
           formatDuration(s.duration_ms)

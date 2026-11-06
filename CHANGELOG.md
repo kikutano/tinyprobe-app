@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Skip a step in runs**: ⊘ Skip, on a step of the diagram and of the list, leaves it out of the workflow's next runs (▶ Run and ▶ Up to here) without changing the file, with tinyprobe's `run --skip`. The step is dimmed and marked "skipped in runs", the result counts it as skipped, and "⊘ 2 steps skipped in runs · Run all" next to ▶ Run reminds you, and turns them all back on. The switches are kept in the browser per folder and workflow; one whose step was renamed or moved is dropped, so the app never skips a step you did not choose. If a later step needs a value only a skipped step saves, it fails and says which step was skipped. Run all workflows runs every step. Needs tinyprobe 0.24.0 or newer; with an older one the button is not shown.
 - **Duplicate, add after and delete a step from the diagram**: a step clicked in the diagram has ⧉ Duplicate (a copy right after it, as written, with "(copy)" after its name), + Add after (the form of a new step, put after it instead of at the end) and ✕ Delete. Edit has ⧉ and + on every row too.
 - **Rename a workflow**: ✎ Rename, next to Duplicate, changes its name and its description where they are written. The file keeps its name, so the history and the last runs stay with it.
 - A step that ends with a text on several lines (`|` or `>`) took the first line of the next step with it when it was deleted, moved or saved from its form; it no longer does.

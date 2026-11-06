@@ -438,6 +438,22 @@
     $('view').scrollIntoView({ block: 'start' });
   }
 
+  /** renderView once for many events: a run's events come faster than a screen refreshes (a timer for a hidden tab). */
+  let viewPending = null;
+  function renderViewSoon() {
+    if (viewPending) return;
+    viewPending = { timer: setTimeout(renderViewNow, 100), frame: requestAnimationFrame(renderViewNow) };
+  }
+
+  function renderViewNow() {
+    if (viewPending) {
+      clearTimeout(viewPending.timer);
+      cancelAnimationFrame(viewPending.frame);
+      viewPending = null;
+    }
+    renderView();
+  }
+
   function renderView() {
     const view = $('view');
     if (!state.info) return;
@@ -1812,7 +1828,11 @@
         // The badge next to Run follows the run, and so does the list view.
         const badge = $('run-outcome');
         if (badge?.dataset.path === workflow.path) fillOutcome(badge, workflow.path);
-        if (state.selection.kind === 'workflow' && state.selection.file === workflow.path && recall('workflow-view', 'diagram') === 'list') renderView();
+        if (state.selection.kind === 'workflow' && state.selection.file === workflow.path && recall('workflow-view', 'diagram') === 'list') {
+          // The end of the run is shown at once, the events before it together.
+          if (event.event === 'run_finished') renderViewNow();
+          else renderViewSoon();
+        }
         if (event.event === 'run_finished' && !to) {
           state.outcomes.set(workflow.path, event.success);
           renderSidebar();

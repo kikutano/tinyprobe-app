@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **A form keeps what you typed when you come back to the page.** The app reads the folder again when its window comes back to the front, to see what changed in your editor, and drew the whole view again: a new request, a new workflow, a step, an auth set, a block of YAML or a value of the environment lost what was typed and not saved yet. Now only the sidebar and the top bar follow the folder while a form is open; the form stays as it was, and its save still checks that the file did not change meanwhile. ↻ still draws everything again.
+
 ## 0.4.11
 
 - **The overview shows how the folder is doing**: every workflow with its last run (✓ or ✗, the steps passed and failed, how long it took, when, and with which environment), a ▶ Run for each, and the totals ("8 passed · 1 failed"). The last runs are kept per folder in the browser, so the overview and the marks of the sidebar are still there when the app is opened again.

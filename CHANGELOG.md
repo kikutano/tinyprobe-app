@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.9
 
 - **Long runs are fast again.** A workflow of 500 steps took almost four minutes in the app and now takes about a third of a second, like `tinyprobe run` alone (100 steps: 7.3 s to 95 ms). Since 0.4.7 the diagram measured the page on every event of a run, which made each event slower than the one before; and the diagram, the results and the list of steps were rebuilt once per event. The page is now measured only when the window changes size, and the views are drawn once for all the events that arrived in between, at most every 100 ms in a hidden tab.
 

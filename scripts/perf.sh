@@ -12,7 +12,9 @@ WEB="$2"
 # The page budget went from 200 to 256 KiB on 2026-11-02: the diagram (M5-3), the visual editor (M5-4) and
 # environments made it 210 KB, still a fraction of one image of a typical web app.
 MAX_BINARY=4194304      # 4 MiB
-MAX_PAGE=262144         # 256 KiB: the HTML, CSS, JavaScript and icons of web/
+# Since 2026-11-06 the page's text files are embedded gzipped (0.4.10): the budget counts what the executable
+# carries, the text gzipped and the icons as they are. 253 KB of files were 85 KB in the executable.
+MAX_PAGE=131072         # 128 KiB: the page as embedded
 MAX_START_MS=50         # --version
 
 failed=0
@@ -25,8 +27,16 @@ check() {
 size=$(wc -c < "$APP" | tr -d ' ')
 check "launcher size" "$size" "$MAX_BINARY" "bytes"
 
-page=$(find "$WEB" -type f -exec cat {} + | wc -c | tr -d ' ')
-check "page size" "$page" "$MAX_PAGE" "bytes"
+# The text files as the build gzips them (CompressPage in the project), the other files as they are.
+page=0
+for file in $(find "$WEB" -type f); do
+  case "$file" in
+    *.html|*.js|*.css|*.svg|*.webmanifest) bytes=$(gzip -6 -c "$file" | wc -c | tr -d ' ') ;;
+    *) bytes=$(wc -c < "$file" | tr -d ' ') ;;
+  esac
+  page=$((page + bytes))
+done
+check "page size (embedded)" "$page" "$MAX_PAGE" "bytes"
 
 # The best of five starts: the first one also pays for the disk cache.
 best=999999

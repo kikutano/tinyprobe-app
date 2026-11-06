@@ -14,6 +14,7 @@
 </head>
 <body>
   <header class="topbar">
+    <button type="button" id="nav-toggle" class="icon-button nav-toggle" title="Files of the folder" aria-label="Files of the folder" aria-controls="sidebar" aria-expanded="false" hidden>☰</button>
     <div class="brand"><img src="/icon.svg" alt="" width="22" height="22"><span>tinyprobe</span></div>
     <span class="versions" id="versions"></span>
     <button type="button" id="update-badge" class="update-badge" hidden></button>
@@ -33,6 +34,7 @@
 
   <div class="shell" id="shell">
     <nav class="sidebar" id="sidebar" aria-label="Files of the folder" hidden></nav>
+    <div class="nav-backdrop" id="nav-backdrop" hidden></div>
     <main class="main">
       <section id="view" class="view"></section>
       <section id="results" class="results" aria-label="Results"></section>

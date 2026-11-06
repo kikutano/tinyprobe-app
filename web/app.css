@@ -117,10 +117,20 @@ code, .mono { font-family: var(--mono); font-size: 0.92em; }
 
 .shell { flex: 1; min-height: 0; display: grid; grid-template-columns: 280px 1fr; }
 .shell.no-sidebar { grid-template-columns: 1fr; }
+/* On a phone the files are a drawer opened with ☰, over the page: the view keeps the whole screen. */
+.nav-toggle { display: none; }
 @media (max-width: 760px) {
   .shell { grid-template-columns: 1fr; }
-  .sidebar { max-height: 40vh; border-right: none; border-bottom: 1px solid var(--border); }
+  .nav-toggle:not([hidden]) { display: inline-grid; }
+  .sidebar {
+    position: fixed; z-index: 30; left: 0; top: var(--topbar-height, 0); bottom: 0; width: min(85vw, 320px);
+    transform: translateX(-100%); transition: transform 0.18s ease;
+  }
+  body.nav-open .sidebar { transform: none; box-shadow: 0 0 24px rgba(0, 0, 0, 0.25); }
+  body.nav-open .nav-backdrop { display: block; }
+  .nav-backdrop { position: fixed; z-index: 29; inset: var(--topbar-height, 0) 0 0 0; background: rgba(0, 0, 0, 0.35); }
 }
+.nav-backdrop { display: none; }
 
 .sidebar {
   overflow: auto;
@@ -171,7 +181,8 @@ code, .mono { font-family: var(--mono); font-size: 0.92em; }
 .add { color: var(--accent); font-weight: 600; }
 
 .verb {
-  flex: none; min-width: 3.6em; font: 650 0.72em/1.6 var(--mono); letter-spacing: 0.02em; color: var(--muted);
+  /* As wide as DELETE: the names of the sidebar start at the same place whatever the method. */
+  flex: none; width: 4.2em; font: 650 0.72em/1.6 var(--mono); letter-spacing: 0.02em; color: var(--muted);
 }
 .verb-GET { color: var(--passed); }
 .verb-POST { color: var(--running); }
@@ -188,7 +199,7 @@ code, .mono { font-family: var(--mono); font-size: 0.92em; }
 .view h2 { margin: 24px 0 8px; font-size: 1.05em; }
 .lead { margin: 6px 0 0; color: var(--muted); max-width: 70ch; }
 .title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.title-row .verb { font-size: 0.85em; min-width: 0; }
+.title-row .verb { font-size: 0.85em; width: auto; }
 .where { margin-top: 4px; color: var(--muted); font-size: 0.9em; overflow-wrap: anywhere; }
 .path { margin-top: 10px; padding: 8px 10px; border-radius: 6px; background: var(--code-bg); font-family: var(--mono); overflow-wrap: anywhere; }
 /* The head of a workflow or a sequence: a card, the file as a chip, the description under a line, as wide as the card. */
@@ -227,11 +238,13 @@ code, .mono { font-family: var(--mono); font-size: 0.92em; }
 
 /* --- Forms --------------------------------------------------------------------------------------------- */
 
-.form { display: grid; grid-template-columns: minmax(120px, max-content) minmax(0, 1fr); gap: 8px 14px; align-items: center; margin-top: 14px; max-width: 760px; }
+.form { display: grid; grid-template-columns: minmax(120px, max-content) minmax(0, 1fr); gap: 8px 14px; align-items: center; margin-top: 14px; }
 .form label { font-family: var(--mono); font-size: 0.92em; overflow-wrap: anywhere; }
 .form label .required { color: var(--failed); margin-left: 2px; }
 .form .hint { grid-column: 2; margin-top: -4px; color: var(--muted); font-size: 0.82em; }
 .field { display: flex; gap: 8px; align-items: center; min-width: 0; }
+/* The place of a button a row does not have, so the inputs of a form end at the same place. */
+.icon-space { flex: none; width: 30px; }
 .input, .select, .textarea {
   width: 100%; min-width: 0; padding: 6px 9px;
   border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--fg);
@@ -241,7 +254,7 @@ code, .mono { font-family: var(--mono); font-size: 0.92em; }
 .input:focus, .select:focus, .textarea:focus { border-color: var(--focus); outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus) 25%, transparent); }
 .input.invalid { border-color: var(--failed); }
 .default { color: var(--muted); font-size: 0.85em; white-space: nowrap; }
-.more { margin-top: 14px; max-width: 760px; }
+.more { margin-top: 14px; }
 .more summary { cursor: pointer; color: var(--muted); }
 .rows { display: grid; gap: 6px; }
 .row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: 6px; }

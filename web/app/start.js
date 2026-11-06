@@ -1,7 +1,7 @@
 // Start: the launcher's state, the folder's files read through tinyprobe inspect, the environment.
 import { $, api, baseName, core, h, query, recall, remember, showFatal, showMessage, showRestart, slash, state, text } from './base.js';
 import { checkUpdates, renderVersions } from './dialogs.js';
-import { render, renderChrome } from './render.js';
+import { holdsInput, render, renderChrome, renderSidebar } from './render.js';
 import { stream } from './runs.js';
 
 // --- Start ---------------------------------------------------------------------------------------------
@@ -36,7 +36,11 @@ export async function openRoot(root) {
   await loadListing();
 }
 
-export async function loadListing() {
+/**
+ * Reads the folder and draws it. With `{ quiet: true }` (the page came back to the front) a form keeps what was typed
+ * in it: only the top bar and the sidebar are drawn again.
+ */
+export async function loadListing({ quiet = false } = {}) {
   if (!state.root || !state.info?.tinyprobe) return;
   // The first time a folder is opened its view is a progress screen; later readings only show the thin bar.
   const first = !state.model || state.listing?.root !== state.root;
@@ -60,7 +64,12 @@ export async function loadListing() {
   // One environment file: nothing to choose.
   if (!state.environment && state.listing.environments.length === 1 && recall(`env:${state.root}`, undefined) === undefined) state.environment = state.listing.environments[0];
   await loadVariables();
-  render();
+  if (quiet && holdsInput()) {
+    renderChrome();
+    renderSidebar();
+  } else {
+    render();
+  }
 }
 
 /** Reads the folder through the launcher's stream: `{"total"}`, a `{"done"}` per file, then `{"listing"}`. */

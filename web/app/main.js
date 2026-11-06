@@ -30,7 +30,7 @@ let refreshing = null;
 window.addEventListener('focus', () => {
   if (!state.root || refreshing) return;
   refreshing = setTimeout(async () => {
-    await loadListing();
+    await loadListing({ quiet: true });
     refreshing = null;
   }, 150);
 });

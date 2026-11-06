@@ -11,6 +11,16 @@ import { sequenceView, workflowView } from './views/workflow.js';
 
 // --- Rendering -------------------------------------------------------------------------------------------
 
+/**
+ * The views where people type what is not saved yet: a refresh of the folder must not draw them again, or what was
+ * typed is lost. Their save checks that the file did not change meanwhile.
+ */
+const FORMS = new Set(['new', 'new-workflow', 'edit-endpoint', 'edit-step', 'yaml', 'auth', 'environment']);
+
+export function holdsInput() {
+  return FORMS.has(state.selection.kind);
+}
+
 export function render() {
   renderChrome();
   renderSidebar();

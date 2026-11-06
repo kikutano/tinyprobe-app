@@ -130,7 +130,7 @@ export async function runWorkflow(workflow, to) {
 
 /**
  * The last whole run of a workflow, for the sidebar and the overview: kept per folder in the browser, so it is
- * still there when the app is opened again. A run up to a step (Run to here) is not a whole run.
+ * still there when the app is opened again. A run up to a step (▶ Up to here) is not a whole run.
  */
 export function recordOutcome(path, finished) {
   const s = finished.summary ?? {};

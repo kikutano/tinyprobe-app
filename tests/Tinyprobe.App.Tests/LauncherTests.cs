@@ -208,16 +208,47 @@ public sealed class ApiTests : IDisposable
 
     private string Origin => $"Origin: http://127.0.0.1:{_port}";
 
-    [Fact]
-    public async Task ThePage_IsServed_WithItsSecurityHeaders()
+    /// <summary>A GET whose body is bytes: the page's text files are sent gzipped.</summary>
+    private async Task<(int Status, Dictionary<string, string> Headers, byte[] Body)> GetBytes(string target, params string[] headers)
     {
-        var (status, headers, body) = await Send("GET", "/");
+        using var client = new TcpClient();
+        await client.ConnectAsync("127.0.0.1", _port);
+        var stream = client.GetStream();
+        var head = new StringBuilder($"GET {target} HTTP/1.1\r\nHost: 127.0.0.1:{_port}\r\n");
+        foreach (var header in headers) head.Append(header).Append("\r\n");
+        await stream.WriteAsync(Encoding.UTF8.GetBytes(head.Append("Content-Length: 0\r\n\r\n").ToString()));
+        using var answer = new MemoryStream();
+        await stream.CopyToAsync(answer);
+        var all = answer.ToArray();
+        var split = all.AsSpan().IndexOf("\r\n\r\n"u8);
+        var lines = Encoding.UTF8.GetString(all, 0, split).Split("\r\n");
+        var parsed = lines.Skip(1).Select(l => l.Split(": ", 2)).ToDictionary(p => p[0], p => p[1], StringComparer.OrdinalIgnoreCase);
+        return (int.Parse(lines[0].Split(' ')[1]), parsed, all[(split + 4)..]);
+    }
+
+    [Fact]
+    public async Task ThePage_IsServedGzipped_WithItsSecurityHeaders()
+    {
+        var (status, headers, body) = await GetBytes("/", "Accept-Encoding: gzip, deflate, br");
 
         Assert.Equal(200, status);
-        Assert.Contains("<title>tinyprobe</title>", body);
+        Assert.Equal("gzip", headers["Content-Encoding"]);
+        using var gzip = new System.IO.Compression.GZipStream(new MemoryStream(body), System.IO.Compression.CompressionMode.Decompress);
+        Assert.Contains("<title>tinyprobe</title>", await new StreamReader(gzip).ReadToEndAsync());
         Assert.StartsWith("default-src 'self'", headers["Content-Security-Policy"]);
         Assert.Equal("nosniff", headers["X-Content-Type-Options"]);
         Assert.Equal(404, (await Send("GET", "/nothing.js")).Status);
+    }
+
+    [Fact]
+    public async Task ThePage_NeedsAClientThatAcceptsGzip_AndIconsAreSentAsTheyAre()
+    {
+        Assert.Equal(406, (await Send("GET", "/app.js")).Status);
+
+        var (status, headers, body) = await GetBytes("/icon-192.png", "Accept-Encoding: gzip");
+        Assert.Equal(200, status);
+        Assert.False(headers.ContainsKey("Content-Encoding"));
+        Assert.Equal(new byte[] { 0x89, (byte)'P', (byte)'N', (byte)'G' }, body[..4]);
     }
 
     [Fact]

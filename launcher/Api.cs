@@ -30,9 +30,10 @@ internal sealed class Api
         _paths = paths;
         _instanceSecret = instanceSecret;
         // Resource names use `\` when the project is built on Windows.
+        // Text files are embedded gzipped (`web/app.js.gz`): they are served by their own name.
         _files = Assembly.GetExecutingAssembly().GetManifestResourceNames()
             .Where(n => n.StartsWith("web", StringComparison.Ordinal))
-            .ToDictionary(n => n.Replace('\\', '/')[3..], n => n, StringComparer.Ordinal);
+            .ToDictionary(n => { var path = n.Replace('\\', '/')[3..]; return path.EndsWith(".gz", StringComparison.Ordinal) ? path[..^3] : path; }, n => n, StringComparer.Ordinal);
     }
 
     public int Port { get; set; }
@@ -118,11 +119,19 @@ internal sealed class Api
             await response.Text(404, "Not found");
             return;
         }
+        // A gzipped file is sent as it is: every browser accepts gzip, and the launcher has no decompressor.
+        var gzipped = resource.EndsWith(".gz", StringComparison.Ordinal);
+        if (gzipped && !(request.Header("Accept-Encoding") ?? "").Contains("gzip", StringComparison.OrdinalIgnoreCase))
+        {
+            await response.Text(406, "Open the page in a browser: it is sent gzipped.");
+            return;
+        }
         using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resource)!;
         var bytes = new byte[stream.Length];
         stream.ReadExactly(bytes);
         // The page loads only its own files: no inline script, no CDN, no frame.
         response.Headers.Add(("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"));
+        if (gzipped) response.Headers.Add(("Content-Encoding", "gzip"));
         await response.Send(200, ContentType(path), bytes);
     }
 

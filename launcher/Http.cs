@@ -79,6 +79,7 @@ internal sealed class HttpResponse(Stream stream)
         403 => "Forbidden",
         404 => "Not Found",
         405 => "Method Not Allowed",
+        406 => "Not Acceptable",
         409 => "Conflict",
         413 => "Content Too Large",
         _ => "Error"

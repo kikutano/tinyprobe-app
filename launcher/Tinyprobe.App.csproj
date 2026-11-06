@@ -24,8 +24,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- The page ships inside the executable: one file to download, and it always matches the launcher. -->
-    <EmbeddedResource Include="..\web\**\*" LogicalName="web/%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- The page ships inside the executable: one file to download, and it always matches the launcher. Its text
+         files are embedded gzipped (CompressPage below) and served as they are: a third of their size. -->
+    <WebText Include="..\web\**\*.html;..\web\**\*.js;..\web\**\*.css;..\web\**\*.svg;..\web\**\*.webmanifest" />
+    <EmbeddedResource Include="..\web\**\*.png" LogicalName="web/%(RecursiveDir)%(Filename)%(Extension)" />
     <EmbeddedResource Include="..\media\icon.png" LogicalName="media/icon.png" />
     <EmbeddedResource Include="..\media\icon.icns" LogicalName="media/icon.icns" />
   </ItemGroup>
@@ -33,5 +35,50 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Tinyprobe.App.Tests" />
   </ItemGroup>
+
+  <!-- Gzips the page's text files at build time, so the launcher never needs a decompressor (zlib would grow the
+       executable). Same bytes for the same files: GZipStream writes no file name and no time. -->
+  <UsingTask TaskName="GzipPage" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Files ParameterType="Microsoft.Build.Framework.ITaskItem[]" Required="true" />
+      <Root ParameterType="System.String" Required="true" />
+      <OutputDir ParameterType="System.String" Required="true" />
+      <Compressed ParameterType="Microsoft.Build.Framework.ITaskItem[]" Output="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.Collections.Generic" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.IO.Compression" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        // Inline tasks build against netstandard2.0: no Path.GetRelativePath, no CompressionLevel.SmallestSize.
+        var root = Path.GetFullPath(Root).TrimEnd('/', '\\') + Path.DirectorySeparatorChar;
+        var items = new List<ITaskItem>();
+        foreach (var file in Files)
+        {
+            var full = file.GetMetadata("FullPath");
+            var relative = full.Substring(root.Length).Replace('\\', '/');
+            var target = Path.Combine(OutputDir, relative + ".gz");
+            Directory.CreateDirectory(Path.GetDirectoryName(target));
+            using (var input = File.OpenRead(full))
+            using (var output = File.Create(target))
+            using (var gzip = new GZipStream(output, CompressionLevel.Optimal))
+                input.CopyTo(gzip);
+            var item = new Microsoft.Build.Utilities.TaskItem(target);
+            item.SetMetadata("LogicalName", "web/" + relative + ".gz");
+            items.Add(item);
+        }
+        Compressed = items.ToArray();
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <Target Name="CompressPage" BeforeTargets="PrepareForBuild">
+    <GzipPage Files="@(WebText)" Root="$(MSBuildProjectDirectory)/../web" OutputDir="$(IntermediateOutputPath)page">
+      <Output TaskParameter="Compressed" ItemName="CompressedPage" />
+    </GzipPage>
+    <ItemGroup>
+      <EmbeddedResource Include="@(CompressedPage)" />
+    </ItemGroup>
+  </Target>
 
 </Project>

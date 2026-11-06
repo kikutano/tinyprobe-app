@@ -71,6 +71,7 @@
   <script src="/shared/environment-file.js"></script>
   <script src="/shared/history.js"></script>
   <script src="/shared/flow.js"></script>
-  <script src="/app.js"></script>
+  <!-- The page itself, as ES modules (web/app/): no build step, the browser loads them. -->
+  <script type="module" src="/app/main.js"></script>
 </body>
 </html>

@@ -243,7 +243,7 @@ public sealed class ApiTests : IDisposable
     [Fact]
     public async Task ThePage_NeedsAClientThatAcceptsGzip_AndIconsAreSentAsTheyAre()
     {
-        Assert.Equal(406, (await Send("GET", "/app.js")).Status);
+        Assert.Equal(406, (await Send("GET", "/app/main.js")).Status);
 
         var (status, headers, body) = await GetBytes("/icon-192.png", "Accept-Encoding: gzip");
         Assert.Equal(200, status);

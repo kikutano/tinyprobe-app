@@ -1,5 +1,5 @@
 // Rendering: the top bar, the sidebar and the view of the selection.
-import { $, api, baseName, h, recall, remember, showMessage, state } from './base.js';
+import { $, api, baseName, h, recall, remember, RestartError, showMessage, state } from './base.js';
 import { authView, endpointEditView, yamlView } from './views/editor.js';
 import { endpointView } from './views/endpoint.js';
 import { environmentView } from './views/environment.js';

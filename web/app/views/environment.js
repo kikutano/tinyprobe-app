@@ -1,5 +1,5 @@
 // The environment: its variables edited in place, and a new environment file.
-import { $, api, baseName, envFile, h, query, remember, showMessage, state, text } from '../base.js';
+import { $, api, baseName, envFile, h, query, remember, RestartError, showMessage, state, text } from '../base.js';
 import { renderSidebar, select } from '../render.js';
 import { loadListing } from '../start.js';
 

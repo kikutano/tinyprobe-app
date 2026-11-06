@@ -1,5 +1,5 @@
 // Calls and runs: the launcher's ndjson streams, shown with the shared run view.
-import { $, api, baseName, core, h, HISTORY_SIZE, recall, remember, requestHistory, runView, showRestart, slash, state } from './base.js';
+import { $, api, baseName, core, h, HISTORY_SIZE, recall, remember, requestHistory, RestartError, runView, showRestart, slash, state } from './base.js';
 import { ownerOf, renderSidebar, renderView, renderViewNow, renderViewSoon, showOwnResults } from './render.js';
 import { fillOutcome } from './views/workflow.js';
 

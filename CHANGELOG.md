@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Duplicate, add after and delete a step from the diagram**: a step clicked in the diagram has ⧉ Duplicate (a copy right after it, as written, with "(copy)" after its name), + Add after (the form of a new step, put after it instead of at the end) and ✕ Delete. Edit has ⧉ and + on every row too.
+- **Rename a workflow**: ✎ Rename, next to Duplicate, changes its name and its description where they are written. The file keeps its name, so the history and the last runs stay with it.
+- A step that ends with a text on several lines (`|` or `>`) took the first line of the next step with it when it was deleted, moved or saved from its form; it no longer does.
 - **Duplicate a workflow**: ⧉ Duplicate, next to Diagram, List and Edit, asks for the name of the copy and saves it as a new file next to the original (`Users for admins` becomes `workflows/users-for-admins.yaml`), then opens it. The copy is the original as it is on disk, comments included, with only its `name:` changed: change what you need from there.
 - **Errors are shown again** (since 0.4.11): a save refused because the file changed on disk, a call or a run that failed, or a launcher that was restarted made the page stop with an error instead of saying what happened. A name the page's code needs was missing when it was split into modules in 0.4.11; a test now checks every module's imports.
 

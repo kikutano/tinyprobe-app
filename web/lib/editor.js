@@ -27,8 +27,16 @@
     let from = offsetOf(text, block.start);
     const lineStart = text.lastIndexOf('\n', from - 1) + 1;
     if (/^[ \t]*$/.test(text.slice(lineStart, from))) from = lineStart;
-    let to = text.indexOf('\n', offsetOf(text, block.end));
-    if (to < 0) to = text.length;
+    let to;
+    if (block.end.column === 1 && block.end.line > block.start.line) {
+      // A block ending in a multi-line text (| or >) ends where the next line starts: its last line is the one before.
+      to = Math.max(offsetOf(text, block.end) - 1, from);
+      // Empty lines before the next one belong to neither.
+      while (to > from && /^[ \t\r]*$/.test(text.slice(text.lastIndexOf('\n', to - 1) + 1, to))) to = text.lastIndexOf('\n', to - 1);
+    } else {
+      to = text.indexOf('\n', offsetOf(text, block.end));
+      if (to < 0) to = text.length;
+    }
     if (text[to - 1] === '\r') to--;
     return { from, to };
   }
@@ -513,6 +521,64 @@
     return line + (text.includes('\r\n') ? '\r\n' : '\n') + text;
   }
 
+  /**
+   * The text with the workflow's `name` and `description` as given, from the `key` blocks of inspect --source: each
+   * replaced where it is, a missing one added (the name on top, under the leading comments; the description after
+   * the name), an empty description removed. The rest of the file, comments included, stays as it is.
+   */
+  function workflowHead(text, blocks, { name, description }) {
+    const key = k => blocks.find(b => b.kind === 'key' && b.name === k) ?? null;
+    const nameBlock = key('name');
+    const descriptionBlock = key('description');
+    const nameLine = `name: ${scalar(String(name).trim())}`;
+    const wanted = String(description ?? '').trim();
+    const descriptionLine = wanted === '' ? null : `description: ${scalar(wanted)}`;
+    let out = text;
+    // An addition after the name first, then the replacements from the end up: each keeps the positions above it.
+    if (!descriptionBlock && descriptionLine && nameBlock) out = insertAfter(out, nameBlock, descriptionLine);
+    const edits = [];
+    if (nameBlock) edits.push([nameBlock, t => replaceBlock(t, nameBlock, nameLine)]);
+    if (descriptionBlock) edits.push([descriptionBlock, t => descriptionLine ? replaceBlock(t, descriptionBlock, descriptionLine) : removeBlock(t, descriptionBlock)]);
+    edits.sort((a, b) => b[0].start.line - a[0].start.line);
+    for (const [, apply] of edits) out = apply(out);
+    if (!nameBlock) {
+      const top = [nameLine, !descriptionBlock && descriptionLine ? descriptionLine : null].filter(Boolean);
+      const eol = eolOf(out);
+      // A first line such as `# yaml-language-server: $schema=...` stays first.
+      const comments = /^(?:[ \t]*(?:#[^\n]*)?\r?\n)*/.exec(out)[0];
+      out = comments + top.join(eol) + eol + out.slice(comments.length);
+    }
+    return out;
+  }
+
+  /**
+   * The text with a copy of a step right after it, as written (comments included); a `name:` on the step's own
+   * level gets " (copy)", so the two read apart in the diagram and the report.
+   */
+  function duplicateStep(text, block) {
+    const { from, to } = lines(text, block);
+    const indent = ' '.repeat(indentOf(block) + 2);
+    const copy = text.slice(from, to).replace(/\r/g, '').split('\n');
+    for (let i = 0; i < copy.length; i++) {
+      const own = i === 0 ? /^([ \t]*-[ \t]+name:[ \t]*)(.*)$/.exec(copy[i]) : new RegExp(`^(${indent}name:[ \\t]*)(.*)$`).exec(copy[i]);
+      if (!own) continue;
+      const value = own[2].replace(/[ \t]+#.*$/, '').trim();
+      // A block scalar (|, >) or a value on the next lines is left as it is.
+      if (value === '' || /^[|>]/.test(value)) break;
+      const plain = /^"(?:[^"\\]|\\.)*"$/.test(value) ? JSON.parse(value) : /^'(?:[^']|'')*'$/.test(value) ? value.slice(1, -1).replace(/''/g, "'") : value;
+      copy[i] = own[1] + scalar(`${plain} (copy)`);
+      break;
+    }
+    // The copy keeps the file's spacing: an empty line before it when one follows the step.
+    const spaced = /^\r?\n[ \t]*\r?\n/.test(text.slice(to));
+    return insertAfter(text, block, (spaced ? '\n' : '') + copy.join('\n'));
+  }
+
+  /** The index of the step block that holds a line of the file (inspect's location of a step), or -1. */
+  function stepAt(blocks, line) {
+    return blocks.filter(b => b.kind === 'step').findIndex(b => b.start.line <= line && line <= b.end.line);
+  }
+
   /** The file of a copy: next to the original, so its imports and uses stay right, and named after the copy. */
   function copyFileName(original, name) {
     const slug = String(name ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -545,7 +611,7 @@
   Object.assign(exports, {
     offsetOf, replaceBlock, removeBlock, insertAfter, swapBlocks, indentOf,
     display, requestFromSource, AUTH_KINDS, authFromSource, authSetYaml, checkAuthName, addAuthSet,
-    OPERATORS, CHECK_PLACES, DURATION_OPERATORS, stepFromSource, mappingBlocks, extraParts, stepYaml, newWorkflowFile, workflowFileName, renamedWorkflow, copyFileName, relativePath, resolvePath
+    OPERATORS, CHECK_PLACES, DURATION_OPERATORS, stepFromSource, mappingBlocks, extraParts, stepYaml, newWorkflowFile, workflowFileName, renamedWorkflow, copyFileName, workflowHead, duplicateStep, stepAt, relativePath, resolvePath
   });
 })(typeof module === 'object' && module.exports ? module.exports : (globalThis.tinyprobeEditor = {}),
   typeof module === 'object' && module.exports ? require('./core.js') : globalThis.tinyprobeCore);

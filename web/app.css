@@ -426,7 +426,10 @@ label.check { display: block; padding: 2px 0; font-family: var(--mono); font-siz
 }
 
 /* Duplicate: a line under the actions of a workflow, the name of the copy and where it goes. */
-.duplicate { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
-.duplicate .input { flex: 1; min-width: 12em; }
-.duplicate-file { flex-basis: 100%; color: var(--muted); font: 0.82em var(--mono); }
-.duplicate > div[aria-live] { flex-basis: 100%; }
+.head-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+.head-form .input { flex: 1; min-width: 12em; }
+.head-form.rename { display: grid; grid-template-columns: auto 1fr; }
+.head-form-actions { grid-column: 2; display: inline-flex; gap: 8px; }
+.head-form-note { flex-basis: 100%; grid-column: 1 / -1; color: var(--muted); font: 0.82em var(--mono); }
+.head-form > div[aria-live] { flex-basis: 100%; grid-column: 1 / -1; }
+.panel-actions { flex-wrap: wrap; justify-content: flex-end; }

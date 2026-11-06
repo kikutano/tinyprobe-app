@@ -346,3 +346,53 @@ test('a copy of a workflow gets its new name, next to the original, the rest as 
   assert.equal(editor.copyFileName('smoke.yaml', 'Smoke 2'), 'smoke-2.yaml');
   assert.equal(editor.copyFileName('workflows/a.yaml', '  !! '), null);
 });
+
+// Blocks as tinyprobe 0.23.0 gives them for these files: a block ending in a multi-line text ends at the start of
+// the next line.
+test('a step ending in a multi-line text is replaced, moved and removed without the next one', () => {
+  const text = 'steps:\n  - call: ping\n    with:\n      note: |\n        a\n        b\n\n  - call: pong\n';
+  const first = { kind: 'step', index: 0, start: { line: 2, column: 3 }, end: { line: 8, column: 1 } };
+  const second = { kind: 'step', index: 1, start: { line: 8, column: 3 }, end: { line: 8, column: 15 } };
+  assert.equal(editor.removeBlock(text, first), 'steps:\n\n  - call: pong\n');
+  assert.equal(editor.replaceBlock(text, first, '  - call: other'), 'steps:\n  - call: other\n\n  - call: pong\n');
+  assert.equal(editor.swapBlocks(text, first, second), 'steps:\n  - call: pong\n\n  - call: ping\n    with:\n      note: |\n        a\n        b\n');
+  // At the end of the file.
+  const last = 'steps:\n  - call: ping\n    with:\n      note: |\n        a\n';
+  assert.equal(editor.removeBlock(last, { kind: 'step', index: 0, start: { line: 2, column: 3 }, end: { line: 6, column: 1 } }), 'steps:\n');
+});
+
+test('the name and the description of a workflow change where they are written', () => {
+  const text = '# yaml-language-server: $schema=x\nname: W   # the name\ndescription: >\n  Two\n  lines\nimport: [api.yaml]\nsteps:\n  - call: ping\n';
+  const blocks = [
+    { kind: 'key', name: 'name', start: { line: 2, column: 1 }, end: { line: 2, column: 8 } },
+    { kind: 'key', name: 'description', start: { line: 3, column: 1 }, end: { line: 6, column: 1 } },
+    { kind: 'key', name: 'import', start: { line: 6, column: 1 }, end: { line: 6, column: 19 } }
+  ];
+  assert.equal(editor.workflowHead(text, blocks, { name: 'Users: admins', description: 'One line' }),
+    '# yaml-language-server: $schema=x\nname: "Users: admins"\ndescription: One line\nimport: [api.yaml]\nsteps:\n  - call: ping\n');
+  assert.equal(editor.workflowHead(text, blocks, { name: 'W2', description: '  ' }),
+    '# yaml-language-server: $schema=x\nname: W2\nimport: [api.yaml]\nsteps:\n  - call: ping\n');
+  // A description added after the name; both added on top, under the leading comments.
+  assert.equal(editor.workflowHead('name: W\nsteps: []\n', [{ kind: 'key', name: 'name', start: { line: 1, column: 1 }, end: { line: 1, column: 8 } }], { name: 'W', description: 'Why' }),
+    'name: W\ndescription: Why\nsteps: []\n');
+  assert.equal(editor.workflowHead('# c\r\nsteps: []\r\n', [], { name: 'New', description: 'Why' }), '# c\r\nname: New\r\ndescription: Why\r\nsteps: []\r\n');
+  assert.equal(editor.workflowHead('steps: []\n', [], { name: 'New', description: '' }), 'name: New\nsteps: []\n');
+});
+
+test('a copied step comes right after it, with (copy) in its own name only', () => {
+  const text = 'steps:\n  - name: "Ping: one"   # first\n    call: ping\n    with: { name: inner }\n  - call: ping\n';
+  const first = { kind: 'step', index: 0, start: { line: 2, column: 3 }, end: { line: 4, column: 26 } };
+  assert.equal(editor.duplicateStep(text, first),
+    'steps:\n  - name: "Ping: one"   # first\n    call: ping\n    with: { name: inner }\n  - name: "Ping: one (copy)"\n    call: ping\n    with: { name: inner }\n  - call: ping\n');
+  const named = 'steps:\r\n  - call: ping\r\n    name: Ping\r\n';
+  assert.equal(editor.duplicateStep(named, { kind: 'step', index: 0, start: { line: 2, column: 3 }, end: { line: 3, column: 15 } }),
+    'steps:\r\n  - call: ping\r\n    name: Ping\r\n  - call: ping\r\n    name: Ping (copy)\r\n');
+  // Without a name of its own, the copy is the same step; a nested name stays.
+  const nested = 'steps:\n  - call: ping\n    with:\n      name: x\n';
+  assert.equal(editor.duplicateStep(nested, { kind: 'step', index: 0, start: { line: 2, column: 3 }, end: { line: 4, column: 14 } }),
+    nested + '  - call: ping\n    with:\n      name: x\n');
+  // An empty line after the step: one before the copy too.
+  assert.equal(editor.duplicateStep('steps:\n  - call: a\n\n  - call: b\n', { kind: 'step', index: 0, start: { line: 2, column: 3 }, end: { line: 2, column: 12 } }),
+    'steps:\n  - call: a\n\n  - call: a\n\n  - call: b\n');
+  assert.equal(editor.stepAt([{ kind: 'key', name: 'steps', start: { line: 1, column: 1 }, end: { line: 4, column: 14 } }, first, { kind: 'step', index: 1, start: { line: 5, column: 3 }, end: { line: 5, column: 15 } }], 5), 1);
+});

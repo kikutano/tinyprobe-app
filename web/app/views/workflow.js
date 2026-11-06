@@ -1,10 +1,10 @@
 // A workflow and a sequence: the head, Run, the diagram and the list of steps.
 import { saveFile } from './editor.js';
-import { $, baseName, control, editing, flows, h, query, recall, remember, RestartError, runView, showMessage, slash, state, text } from '../base.js';
+import { $, api, baseName, control, editing, flows, h, query, recall, remember, RestartError, runView, showMessage, slash, state, text } from '../base.js';
 import { item, renderView, select } from '../render.js';
 import { runWorkflow } from '../runs.js';
 import { model } from '../start.js';
-import { stepsEditor } from './steps.js';
+import { stepActions, stepsEditor } from './steps.js';
 
 // --- A workflow and a sequence ---------------------------------------------------------------------------
 
@@ -24,7 +24,7 @@ function duplicateForm(workflow) {
   const name = control('input', { id: 'duplicate-name', class: 'input', value: `${workflow.name} (copy)` });
   const status = h('div', { 'aria-live': 'polite' });
   const save = h('button', { type: 'submit', class: 'button primary small' }, 'Duplicate');
-  const node = h('form', { class: 'duplicate', hidden: true, onsubmit: async event => {
+  const node = h('form', { class: 'head-form duplicate', hidden: true, onsubmit: async event => {
     event.preventDefault();
     status.replaceChildren();
     const target = editing.copyFileName(workflow.path, name.value);
@@ -45,7 +45,7 @@ function duplicateForm(workflow) {
   } },
     h('label', { for: 'duplicate-name' }, 'Name of the copy'), name, save,
     h('button', { type: 'button', class: 'button small', onclick: () => { node.hidden = true; } }, 'Cancel'),
-    h('div', { class: 'duplicate-file' }, ''),
+    h('div', { class: 'head-form-note duplicate-file' }, ''),
     status);
   const file = node.querySelector('.duplicate-file');
   const showFile = () => { const target = editing.copyFileName(workflow.path, name.value); file.textContent = target ? `File: ${target}` : ''; };
@@ -60,7 +60,50 @@ function duplicateForm(workflow) {
   };
 }
 
+/**
+ * Rename: the workflow's name and description, changed where they are written. The file keeps its name, so the
+ * history and the last runs, kept by file, stay with it.
+ */
+function renameForm(workflow) {
+  const name = control('input', { id: 'rename-name', class: 'input', value: workflow.name });
+  const description = control('input', { id: 'rename-description', class: 'input', value: workflow.inspect.description ?? '', placeholder: 'What it checks (optional)' });
+  const status = h('div', { 'aria-live': 'polite' });
+  const save = h('button', { type: 'submit', class: 'button primary small' }, 'Save');
+  const node = h('form', { class: 'head-form rename', hidden: true, onsubmit: async event => {
+    event.preventDefault();
+    status.replaceChildren();
+    if (name.value.trim() === '') return status.append(h('div', { class: 'notice' }, 'A workflow needs a name.'));
+    save.disabled = true;
+    try {
+      const source = await api(`/api/source?${query({ root: state.root, path: workflow.path })}`);
+      const next = editing.workflowHead(source.text, source.inspect?.blocks ?? [], { name: name.value, description: description.value });
+      if (next === source.text) { node.hidden = true; return; }
+      if (await saveFile(workflow.path, next, source.text, status)) {
+        showMessage(`Saved the name and the description of ${workflow.path}.`, 'info');
+        renderView();
+      }
+    } catch (e) {
+      if (!(e instanceof RestartError)) status.append(h('div', { class: 'notice' }, e.message));
+    } finally {
+      save.disabled = false;
+    }
+  } },
+    h('label', { for: 'rename-name' }, 'Name'), name,
+    h('label', { for: 'rename-description' }, 'Description'), description,
+    h('span', { class: 'head-form-actions' }, save, h('button', { type: 'button', class: 'button small', onclick: () => { node.hidden = true; } }, 'Cancel')),
+    h('div', { class: 'head-form-note' }, `In ${workflow.path}, which keeps its name.`),
+    status);
+  return {
+    node,
+    toggle() {
+      node.hidden = !node.hidden;
+      if (!node.hidden) { name.focus(); name.select(); }
+    }
+  };
+}
+
 let duplicate = null;
+let rename = null;
 
 export function workflowView({ file }) {
   const workflow = state.model.workflows.find(w => w.path === file);
@@ -132,7 +175,9 @@ export function workflowView({ file }) {
         h('button', { type: 'button', class: `button small${mode === 'diagram' ? ' active' : ''}`, 'aria-pressed': String(mode === 'diagram'), onclick: () => toggle('diagram') }, 'Diagram'),
         h('button', { type: 'button', class: `button small${mode === 'list' ? ' active' : ''}`, 'aria-pressed': String(mode === 'list'), onclick: () => toggle('list') }, 'List'),
         state.info.editing ? h('button', { type: 'button', class: `button small${mode === 'edit' ? ' active' : ''}`, 'aria-pressed': String(mode === 'edit'), onclick: () => toggle('edit') }, 'Edit') : null),
-      state.info.editing ? h('button', { type: 'button', class: 'button small', title: 'A copy of this workflow, to change what differs', onclick: () => duplicate.toggle() }, '⧉ Duplicate') : null),
+      state.info.editing ? h('button', { type: 'button', class: 'button small', title: 'Change the name and the description', onclick: () => { duplicate.node.hidden = true; rename.toggle(); } }, '✎ Rename') : null,
+      state.info.editing ? h('button', { type: 'button', class: 'button small', title: 'A copy of this workflow, to change what differs', onclick: () => { rename.node.hidden = true; duplicate.toggle(); } }, '⧉ Duplicate') : null),
+    state.info.editing ? (rename = renameForm(workflow)).node : null,
     state.info.editing ? (duplicate = duplicateForm(workflow)).node : null,
     content,
     mode === 'list' ? h('p', { class: 'aside' }, '▶ Up to here runs the steps before a step again each time, and stops at it: nothing is kept between runs.') : null);
@@ -218,6 +263,7 @@ export function showStep(workflow, step, diagram, details) {
       h('span', { class: 'what' }, `${step.index + 1}. ${step.name}`),
       h('span', { class: 'panel-actions' },
         editStepButton(workflow, step),
+        ...stepActions(workflow, step),
         h('button', { type: 'button', class: 'button small', title: 'Runs the steps before this one again, stops here and shows its response', onclick: () => runWorkflow(workflow, step.index + 1) }, '▶ Up to here'))),
     h('div', { class: 'panel-body' },
       step.type === 'call' ? h('div', { class: 'mono' }, `call ${step.call}`) : h('div', { class: 'mono' }, step.type),

@@ -1,5 +1,5 @@
 // The steps of a workflow: their form, and a new workflow.
-import { control, editing, h, rowValues, showMessage, state, valueRow } from '../base.js';
+import { $, api, control, editing, h, query, RestartError, rowValues, showMessage, slash, state, valueRow } from '../base.js';
 import { renderView, select } from '../render.js';
 import { deleteBlock, editorShell, saveFile, yamlOnly } from './editor.js';
 
@@ -33,6 +33,13 @@ export function stepsEditor(workflow) {
           step.until ? h('span', { class: 'step-kind' }, '  · until') : null),
         h('button', { type: 'button', class: 'button small', onclick: () => select({ kind: 'edit-step', file: workflow.path, index: i }) }, 'Edit'),
         h('button', { type: 'button', class: 'button small', onclick: () => select({ kind: 'yaml', file: workflow.path, block: { kind: 'step', index: i }, back }) }, 'YAML'),
+        h('button', { type: 'button', class: 'icon-button', title: 'Duplicate: a copy right after it', 'aria-label': `Duplicate step ${i + 1}`, onclick: async () => {
+          if (await saveFile(workflow.path, editing.duplicateStep(source.text, blocks[i]), source.text, status)) {
+            showMessage(`Added a copy of step ${i + 1} after it.`, 'info');
+            renderView();
+          }
+        } }, '⧉'),
+        h('button', { type: 'button', class: 'icon-button', title: 'Add a step after this one', 'aria-label': `Add a step after step ${i + 1}`, onclick: () => select({ kind: 'edit-step', file: workflow.path, index: null, afterLine: blocks[i].start.line }) }, '+'),
         h('button', { type: 'button', class: 'icon-button', title: 'Move up', 'aria-label': `Move step ${i + 1} up`, disabled: i === 0, onclick: () => move(i - 1, i) }, '↑'),
         h('button', { type: 'button', class: 'icon-button', title: 'Move down', 'aria-label': `Move step ${i + 1} down`, disabled: i === steps.length - 1, onclick: () => move(i, i + 1) }, '↓'),
         h('button', { type: 'button', class: 'icon-button', 'aria-label': `Delete step ${i + 1}`, disabled: steps.length === 1, title: steps.length === 1 ? 'A workflow needs one step' : 'Delete', onclick: () => deleteBlock(workflow.path, 'step', i, `step ${i + 1} (${stepLabel(step)})`, renderView) }, '✕')))),
@@ -300,16 +307,19 @@ export function stepForm({ endpoints, sequences = [], file = null, initial, onSa
     status);
 }
 
-export function stepEditView({ file, index, line }) {
+export function stepEditView({ file, index, line, afterLine }) {
   const back = { kind: 'workflow', file };
   // From the diagram and the list a step is known by its line: inspect counts the steps of a sequence too.
   const title = index === null ? 'Add a step' : index === undefined ? 'Edit a step' : `Edit step ${index + 1}`;
   return editorShell(title, file, source => {
     const blocks = (source.inspect?.blocks ?? []).filter(b => b.kind === 'step');
     if (index === undefined) {
-      index = blocks.findIndex(b => b.start.line <= line && line <= b.end.line);
+      index = editing.stepAt(blocks, line);
       if (index < 0) return h('div', { class: 'notice' }, 'This step is no longer in the file.');
     }
+    // A new step goes after the one it was asked from, or at the end.
+    const after = afterLine === undefined ? blocks.length - 1 : editing.stepAt(blocks, afterLine);
+    if (index === null && after < 0) return h('div', { class: 'notice' }, 'The step to add after is no longer in the file.');
     const endpoints = source.inspect?.endpoints ?? [];
     const status = h('div', { 'aria-live': 'polite' });
     let initial = { kind: 'call', call: endpoints[0]?.name };
@@ -325,16 +335,17 @@ export function stepEditView({ file, index, line }) {
       onCancel: () => select(back),
       onYaml: block ? () => select({ kind: 'yaml', file, block: { kind: 'step', index }, back }) : null,
       onSave: async step => {
-        const block = index === null ? blocks[blocks.length - 1] : blocks[index];
+        const block = index === null ? blocks[after] : blocks[index];
         const yaml = editing.stepYaml(step, editing.indentOf(block));
         const next = index === null ? editing.insertAfter(source.text, block, yaml) : editing.replaceBlock(source.text, block, yaml);
         if (await saveFile(file, next, source.text, status)) {
-          showMessage(index === null ? `Added a step to ${file}.` : `Saved step ${index + 1}.`, 'info');
+          showMessage(index === null ? `Added step ${after + 2} to ${file}.` : `Saved step ${index + 1}.`, 'info');
           select(back);
         }
       }
     });
     return h('div', null,
+      index === null && afterLine !== undefined ? h('p', { class: 'lead' }, `It goes after step ${after + 1}, ${stepLabel(source.inspect?.source?.steps?.[after])}.`) : null,
       /(^|\s)#/.test(blockText) ? h('div', { class: 'notice info' }, 'The comments inside this step are not kept when it is saved from the form; those around it are. Use Edit as YAML to keep them.') : null,
       form);
   });
@@ -375,4 +386,45 @@ export function newWorkflowView() {
       h('label', null, 'Uses the API'), h('div', null, picks.map(p => h('label', { class: 'check', for: p.box.id }, p.box, ` ${p.file}`)))),
     h('h2', null, 'First step'),
     stepArea);
+}
+
+/**
+ * Duplicate, Add after and Delete for a step of the diagram, known by its line in the file (a step from a sequence
+ * is its use step). The file is read again first, so the action applies to what is there now.
+ */
+export function stepActions(workflow, step) {
+  const line = step.location?.line;
+  const file = workflow.path;
+  if (!state.info.editing || !line || slash(step.location.file) !== file && !slash(step.location.file).endsWith(`/${file}`)) return [];
+  const what = step.sequence ? 'the use step that runs this sequence' : 'this step';
+  const located = async () => {
+    const source = await api(`/api/source?${query({ root: state.root, path: file })}`);
+    const blocks = (source.inspect?.blocks ?? []).filter(b => b.kind === 'step');
+    const index = editing.stepAt(blocks, line);
+    if (index < 0) throw new Error('This step is no longer in the file: it changed on disk.');
+    return { source, blocks, index };
+  };
+  const failed = e => { if (!(e instanceof RestartError)) showMessage(e.message); };
+  return [
+    h('button', { type: 'button', class: 'button small', title: `A copy of ${what}, right after it`, onclick: async () => {
+      try {
+        const { source, blocks, index } = await located();
+        const status = h('div');
+        if (await saveFile(file, editing.duplicateStep(source.text, blocks[index]), source.text, status)) {
+          showMessage(`Added a copy of step ${index + 1} after it.`, 'info');
+          renderView();
+        } else {
+          $('results').prepend(status);
+        }
+      } catch (e) { failed(e); }
+    } }, '⧉ Duplicate'),
+    h('button', { type: 'button', class: 'button small', title: `A new step after ${what}`, onclick: () => select({ kind: 'edit-step', file, index: null, afterLine: line }) }, '+ Add after'),
+    h('button', { type: 'button', class: 'button small', title: `Delete ${what}`, 'aria-label': `Delete step ${step.index + 1}`, onclick: async () => {
+      try {
+        const { blocks, index } = await located();
+        if (blocks.length === 1) return showMessage('A workflow needs one step: this is the only one.');
+        await deleteBlock(file, 'step', index, `step ${index + 1} (${step.sequence ? `use ${step.sequence.name || step.sequence.file}` : step.name})`, renderView);
+      } catch (e) { failed(e); }
+    } }, '✕ Delete')
+  ];
 }

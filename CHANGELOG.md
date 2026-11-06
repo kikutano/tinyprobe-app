@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Errors are shown again** (since 0.4.11): a save refused because the file changed on disk, a call or a run that failed, or a launcher that was restarted made the page stop with an error instead of saying what happened. A name the page's code needs was missing when it was split into modules in 0.4.11; a test now checks every module's imports.
+
 ## 0.4.13
 
 - **▶ Up to here on every step of the diagram**, not only in the list and after clicking a step: it runs the workflow up to that step, running the steps before it again, and shows its response. The button was called Run to here, which said little: it is ▶ Up to here everywhere now, with a tooltip that says what it does.

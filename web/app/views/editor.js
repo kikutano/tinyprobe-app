@@ -1,5 +1,5 @@
 // The visual editor: the files read with inspect --source, a block as YAML, and auth sets.
-import { $, api, control, editing, h, query, showMessage, state, text } from '../base.js';
+import { $, api, control, editing, h, query, RestartError, showMessage, state, text } from '../base.js';
 import { renderView, select } from '../render.js';
 import { loadListing } from '../start.js';
 import { newRequestView } from './request.js';

@@ -1,5 +1,5 @@
 // Dialogs: the folders, the settings, and the versions with their updates.
-import { $, api, h, nodes, query, state } from './base.js';
+import { $, api, h, nodes, query, RestartError, state } from './base.js';
 import { icon, render } from './render.js';
 import { openRoot } from './start.js';
 

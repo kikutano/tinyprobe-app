@@ -1,5 +1,5 @@
 // New request: the form of an endpoint, new or edited.
-import { api, control, core, editing, h, query, recall, remember, rowValues, showMessage, state, text, valueRow } from '../base.js';
+import { api, control, core, editing, h, query, recall, remember, RestartError, rowValues, showMessage, state, text, valueRow } from '../base.js';
 import { select } from '../render.js';
 import { loadListing } from '../start.js';
 

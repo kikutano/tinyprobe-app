@@ -86,7 +86,7 @@ export function recall(key, fallback) {
 export const slash = path => String(path ?? '').replace(/\\/g, '/');
 export const baseName = path => slash(path).split('/').filter(Boolean).pop() ?? path;
 
-class RestartError extends Error {}
+export class RestartError extends Error {}
 
 export async function api(path, body) {
   const options = body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };

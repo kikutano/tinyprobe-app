@@ -1,5 +1,5 @@
 // The first views: tinyprobe missing, no folder yet, and the overview of a folder.
-import { api, baseName, h, runView, state } from '../base.js';
+import { api, baseName, h, RestartError, runView, state } from '../base.js';
 import { openFolderDialog } from '../dialogs.js';
 import { select } from '../render.js';
 import { runAll, runWorkflow } from '../runs.js';

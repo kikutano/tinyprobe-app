@@ -1,5 +1,5 @@
 // Start: the launcher's state, the folder's files read through tinyprobe inspect, the environment.
-import { $, api, baseName, core, h, query, recall, remember, showFatal, showMessage, showRestart, slash, state, text } from './base.js';
+import { $, api, baseName, core, h, query, recall, remember, RestartError, showFatal, showMessage, showRestart, slash, state, text } from './base.js';
 import { checkUpdates, renderVersions } from './dialogs.js';
 import { holdsInput, render, renderChrome, renderSidebar } from './render.js';
 import { stream } from './runs.js';

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Long runs are fast again.** A workflow of 500 steps took almost four minutes in the app and now takes about a third of a second, like `tinyprobe run` alone (100 steps: 7.3 s to 95 ms). Since 0.4.7 the diagram measured the page on every event of a run, which made each event slower than the one before; and the diagram, the results and the list of steps were rebuilt once per event. The page is now measured only when the window changes size, and the views are drawn once for all the events that arrived in between, at most every 100 ms in a hidden tab.
+
 ## 0.4.8
 
 - **for_each and until in the step form.** Repeat: once, for each item of a table (a column per argument, a row per item), of a variable, or of a data file. Wait: call again until conditions hold, every so often, for at most so long, with a status and Body, Header or Cookie conditions. The YAML box keeps only schema and any checks, cookie saves, and values that are lists or objects.

@@ -1,5 +1,5 @@
 // Calls and runs: the launcher's ndjson streams, shown with the shared run view.
-import { $, api, baseName, core, h, HISTORY_SIZE, recall, requestHistory, runView, showRestart, slash, state } from './base.js';
+import { $, api, baseName, core, h, HISTORY_SIZE, recall, remember, requestHistory, runView, showRestart, slash, state } from './base.js';
 import { ownerOf, renderSidebar, renderView, renderViewNow, renderViewSoon, showOwnResults } from './render.js';
 import { fillOutcome } from './views/workflow.js';
 
@@ -118,7 +118,7 @@ export async function runWorkflow(workflow, to) {
         else renderViewSoon();
       }
       if (event.event === 'run_finished' && !to) {
-        state.outcomes.set(workflow.path, event.success);
+        recordOutcome(workflow.path, event);
         renderSidebar();
       }
     }, signal);
@@ -126,6 +126,25 @@ export async function runWorkflow(workflow, to) {
   } catch (e) {
     if (e.name !== 'AbortError' && !(e instanceof RestartError)) view.error(e.message);
   }
+}
+
+/**
+ * The last whole run of a workflow, for the sidebar and the overview: kept per folder in the browser, so it is
+ * still there when the app is opened again. A run up to a step (Run to here) is not a whole run.
+ */
+export function recordOutcome(path, finished) {
+  const s = finished.summary ?? {};
+  state.outcomes.set(path, {
+    success: finished.success,
+    passed: s.passed_steps ?? 0,
+    total: s.total_steps ?? 0,
+    failed: s.failed_steps ?? 0,
+    duration: s.duration_ms ?? 0,
+    at: Date.now(),
+    environment: state.environment
+  });
+  remember(`outcomes:${state.root}`, Object.fromEntries(state.outcomes));
+  if (state.selection.kind === 'home') renderView();
 }
 
 /** The folder as a suite: one run view per workflow, as they start. */
@@ -161,7 +180,7 @@ export async function runAll() {
       }
       (current ?? first).apply(event);
       if (event.event === 'run_finished' && currentFile) {
-        state.outcomes.set(currentFile, event.success);
+        recordOutcome(currentFile, event);
         renderSidebar();
       }
     }, signal);

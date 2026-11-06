@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The page's code is split from one file of 2,100 lines into ES modules, one per view (`web/app/`), loaded by the browser as they are; the helpers that built the same rows of a form in three places are one. Nothing changes in what the app does.
+
 ## 0.4.10
 
 - **On a phone**, the files of the folder are a drawer opened with ☰ instead of a box over half of the screen, and the diagram fits a narrow screen (from 280 pixels).

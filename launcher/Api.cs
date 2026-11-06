@@ -30,7 +30,7 @@ internal sealed class Api
         _paths = paths;
         _instanceSecret = instanceSecret;
         // Resource names use `\` when the project is built on Windows.
-        // Text files are embedded gzipped (`web/app.js.gz`): they are served by their own name.
+        // Text files are embedded gzipped (`web/app/main.js.gz`): they are served by their own name.
         _files = Assembly.GetExecutingAssembly().GetManifestResourceNames()
             .Where(n => n.StartsWith("web", StringComparison.Ordinal))
             .ToDictionary(n => { var path = n.Replace('\\', '/')[3..]; return path.EndsWith(".gz", StringComparison.Ordinal) ? path[..^3] : path; }, n => n, StringComparer.Ordinal);

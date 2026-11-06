@@ -90,6 +90,16 @@ post /api/run "{\"root\":\"$ROOT\",\"files\":[\"example/workflows/users.yaml\"],
 [ "$(grep -c '"event":"step_completed"' "$WORK/to.ndjson")" = 2 ] && grep -q '"event":"run_finished","success":true' "$WORK/to.ndjson" || fail "run --to: $(cat "$WORK/to.ndjson" | head -c 400)"
 ok "run users.yaml up to step 2"
 
+[ "$(code -b "$JAR" -H "$TYPE" -H "$ORIGIN" -d "{\"root\":\"$ROOT\",\"files\":[\"example/workflows/users.yaml\"],\"skip\":[\"2\"]}" "$BASE/api/run")" = 400 ] || fail "a skip that is not a step number was accepted"
+if "$TINYPROBE" --help | grep -q -- '--skip'; then
+  post /api/run "{\"root\":\"$ROOT\",\"files\":[\"example/workflows/users.yaml\"],\"skip\":[2,4],\"env\":\"environment.yaml\"}" > "$WORK/skip.ndjson"
+  head -1 "$WORK/skip.ndjson" | json "d['skipped']" | grep -q '^\[1, 3\]$' && grep -q '"skipped_steps":2' "$WORK/skip.ndjson" && grep -q '"event":"run_finished","success":true' "$WORK/skip.ndjson" \
+    || fail "run --skip: $(head -c 400 "$WORK/skip.ndjson")"
+  ok "run users.yaml with steps 2 and 4 skipped"
+else
+  ok "run --skip not checked: $("$TINYPROBE" --version) has no --skip"
+fi
+
 post /api/run "{\"root\":\"$ROOT\",\"files\":[],\"env\":\"environment.yaml\"}" > "$WORK/all.ndjson"
 tail -2 "$WORK/all.ndjson" | head -1 | json "d['event'], d['success'], d['summary']['failed_workflows']" | grep -q "suite_finished True 0" || fail "run all: $(tail -c 600 "$WORK/all.ndjson")"
 ok "run all: $(tail -2 "$WORK/all.ndjson" | head -1 | json "d['summary']['total_workflows']") workflows passed"

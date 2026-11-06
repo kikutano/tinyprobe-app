@@ -2,7 +2,7 @@
 import { saveFile } from './editor.js';
 import { $, api, baseName, control, editing, flows, h, query, recall, remember, RestartError, runView, showMessage, slash, state, text } from '../base.js';
 import { item, renderView, select } from '../render.js';
-import { runWorkflow } from '../runs.js';
+import { clearSkips, runWorkflow, skippedSteps, toggleSkip } from '../runs.js';
 import { model } from '../start.js';
 import { stepActions, stepsEditor } from './steps.js';
 
@@ -105,6 +105,34 @@ function renameForm(workflow) {
 let duplicate = null;
 let rename = null;
 
+/** "2 steps skipped · Run all" next to Run, so that a step turned off is not forgotten; empty when none is. */
+function skipNote(workflow) {
+  const off = skippedSteps(workflow);
+  const node = h('span', { class: 'skip-note', id: 'skip-note', hidden: off.length === 0 });
+  if (off.length) {
+    node.append(`⊘ ${off.length} ${off.length === 1 ? 'step' : 'steps'} skipped in runs · `,
+      h('button', { type: 'button', class: 'link-button', title: 'Turn every step of this workflow on again', onclick: () => { clearSkips(workflow); renderView(); } }, 'Run all'));
+  }
+  return node;
+}
+
+/** ⊘ Skip on a step: it is left out of the next runs of the workflow (tinyprobe run --skip), the file unchanged. */
+export function skipButton(workflow, step, after) {
+  if (!state.info.skipping || !step) return null;
+  const label = () => skippedSteps(workflow).includes(step.index) ? '○ Run it again' : '⊘ Skip';
+  const button = h('button', {
+    type: 'button', class: 'button small',
+    title: 'Leave this step out of the next runs, or put it back; the file does not change',
+    onclick: () => {
+      if (!toggleSkip(workflow, step)) return showMessage('At least one step has to run: turn another one on first.');
+      button.textContent = label();
+      $('skip-note')?.replaceWith(skipNote(workflow));
+      after?.();
+    }
+  }, label());
+  return button;
+}
+
 export function workflowView({ file }) {
   const workflow = state.model.workflows.find(w => w.path === file);
   if (!workflow) return null;
@@ -122,7 +150,8 @@ export function workflowView({ file }) {
     const picture = h('div', { class: 'flow' });
     const diagram = flows.createFlow(picture, model, {
       onSelect: at => showStep(workflow, steps[at], diagram, details),
-      onRunTo: at => runWorkflow(workflow, model.nodes[at].index + 1)
+      onRunTo: at => runWorkflow(workflow, model.nodes[at].index + 1),
+      skipped: skippedSteps(workflow)
     });
     for (const event of state.runs.get(workflow.path) ?? []) diagram.apply(event);
     state.flow = { path: workflow.path, diagram };
@@ -140,27 +169,31 @@ export function workflowView({ file }) {
     // Each step with how it went in the last run, as the diagram shows it; a click goes to its detail.
     const states = stepStates(state.runs.get(workflow.path));
     const icons = { pending: '○', running: '●', passed: '✓', failed: '✗', skipped: '–' };
+    const off = new Set(skippedSteps(workflow));
     content = h('ol', { class: 'step-table' }, steps.map(step => {
       const run = states.get(step.index);
       const result = run?.result;
-      return h('li', { class: `step-row${result ? ' has-result' : ''}`, onclick: event => {
+      const isOff = off.has(step.index);
+      return h('li', { class: `step-row${result ? ' has-result' : ''}${isOff ? ' step-off' : ''}`, onclick: event => {
         if (event.target.closest('button') || !result) return;
         const last = state.runViews.get(workflow.path);
         if (!last?.node.isConnected) return;
         last.view.select(step.index);
         requestAnimationFrame(() => (last.node.querySelector('.details') ?? last.node).scrollIntoView({ behavior: 'smooth', block: 'start' }));
       } },
-      h('span', { class: `step-state ${run?.status ?? ''}`, title: run?.status ?? 'not run yet' }, run ? icons[run.status] : ''),
+      h('span', { class: `step-state ${run?.status ?? ''}`, title: isOff ? 'skipped in runs' : run?.status ?? 'not run yet' }, isOff && !result ? '⊘' : run ? icons[run.status] : ''),
       h('span', { class: 'step-number' }, step.index + 1),
       h('span', { class: 'step-label' }, step.name,
         step.sequence ? h('span', { class: 'step-kind' }, `  · from ${step.sequence.name || baseName(step.sequence.file)}`) : null,
         step.for_each ? h('span', { class: 'step-kind' }, '  · for each item') : null,
-        step.until ? h('span', { class: 'step-kind' }, '  · until') : null),
+        step.until ? h('span', { class: 'step-kind' }, '  · until') : null,
+        isOff ? h('span', { class: 'step-kind' }, '  · skipped in runs') : null),
       step.type === 'call' ? h('span', { class: 'verb' }, step.call ?? '') : h('span', { class: 'step-kind' }, step.type),
       h('span', { class: 'step-result' },
         result ? h('span', { class: `code ${runView.statusClass(result.status)}` }, result.status ?? '---') : null,
         result ? ` ${runView.formatDuration(result.duration_ms)}` : run?.status === 'running' && run.items ? `item ${run.item}/${run.items}` : run?.status === 'running' && run.attempt > 1 ? `attempt ${run.attempt}` : ''),
       editStepButton(workflow, step),
+      skipButton(workflow, step, renderView),
       h('button', { type: 'button', class: 'button small', title: 'Runs the steps before this one again, stops here and shows its response', onclick: () => runWorkflow(workflow, step.index + 1) }, '▶ Up to here'));
     }));
   }
@@ -170,6 +203,7 @@ export function workflowView({ file }) {
     h('div', { class: 'actions' },
       h('button', { type: 'button', class: 'button primary', onclick: () => runWorkflow(workflow) }, '▶ Run'),
       outcomeBadge(workflow.path),
+      skipNote(workflow),
       h('span', { class: 'spacer' }),
       h('div', { class: 'segmented', role: 'group', 'aria-label': 'Show the steps as' },
         h('button', { type: 'button', class: `button small${mode === 'diagram' ? ' active' : ''}`, 'aria-pressed': String(mode === 'diagram'), onclick: () => toggle('diagram') }, 'Diagram'),
@@ -205,10 +239,10 @@ export function fillOutcome(node, path) {
     const done = events.filter(e => e.event === 'step_completed').length;
     node.classList.add('running');
     node.title = 'Running';
-    return node.replaceChildren(`● ${done}/${(started.steps ?? []).length}${upTo}`);
+    return node.replaceChildren(`● ${done}/${(started.steps ?? []).length - (started.skipped ?? []).length}${upTo}`);
   }
   const s = finished.summary;
-  const parts = [`${s.passed_steps}/${s.total_steps} passed`, s.failed_steps ? `${s.failed_steps} failed` : null, s.not_run_steps ? `${s.not_run_steps} not run` : null].filter(Boolean);
+  const parts = [`${s.passed_steps}/${s.total_steps} passed`, s.failed_steps ? `${s.failed_steps} failed` : null, s.not_run_steps ? `${s.not_run_steps} not run` : null, s.skipped_steps ? `${s.skipped_steps} skipped` : null].filter(Boolean);
   node.classList.add(finished.success ? 'passed' : 'failed');
   node.title = `Last run${upTo}: ${runView.formatDuration(s.duration_ms)}, ${s.checks_passed + s.checks_failed} checks, ${s.http_requests} requests`;
   node.replaceChildren(`${finished.success ? '✓' : '✗'} ${parts.join(' · ')}${upTo}`);
@@ -264,6 +298,7 @@ export function showStep(workflow, step, diagram, details) {
       h('span', { class: 'panel-actions' },
         editStepButton(workflow, step),
         ...stepActions(workflow, step),
+        skipButton(workflow, step, () => diagram.setSkipped(skippedSteps(workflow))),
         h('button', { type: 'button', class: 'button small', title: 'Runs the steps before this one again, stops here and shows its response', onclick: () => runWorkflow(workflow, step.index + 1) }, '▶ Up to here'))),
     h('div', { class: 'panel-body' },
       step.type === 'call' ? h('div', { class: 'mono' }, `call ${step.call}`) : h('div', { class: 'mono' }, step.type),

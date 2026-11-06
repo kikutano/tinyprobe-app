@@ -94,6 +94,52 @@ export async function record(root, call) {
   await api('/api/history', { root, entries: state.history }).catch(() => {});
 }
 
+// --- Steps turned off in runs ----------------------------------------------------------------------------
+//
+// tinyprobe run --skip (spec 0021): the file does not change, the page keeps the switches per folder and
+// workflow, by the step's index and name, until they are turned back on. A step whose name changed at that
+// index is no longer turned off: the page never skips a step the user did not choose.
+
+function skipStore() {
+  return recall(`skips:${state.root}`, {});
+}
+
+/** The indexes of the steps of a workflow turned off in its runs; none when tinyprobe cannot skip. */
+export function skippedSteps(workflow) {
+  if (!state.info.skipping) return [];
+  const all = skipStore();
+  const saved = all[workflow.path] ?? [];
+  const steps = workflow.inspect.steps ?? [];
+  const kept = saved.filter(s => steps[s.index]?.name === s.name);
+  if (kept.length !== saved.length) {
+    if (kept.length) all[workflow.path] = kept;
+    else delete all[workflow.path];
+    remember(`skips:${state.root}`, all);
+  }
+  return kept.map(s => s.index).sort((a, b) => a - b);
+}
+
+/** Turns a step off in runs, or on again; false when it would leave no step to run. */
+export function toggleSkip(workflow, step) {
+  const all = skipStore();
+  const off = new Set(skippedSteps(workflow));
+  if (off.has(step.index)) off.delete(step.index);
+  else if (off.size + 1 >= (workflow.inspect.steps ?? []).length) return false;
+  else off.add(step.index);
+  const steps = workflow.inspect.steps ?? [];
+  if (off.size) all[workflow.path] = [...off].sort((a, b) => a - b).map(index => ({ index, name: steps[index].name }));
+  else delete all[workflow.path];
+  remember(`skips:${state.root}`, all);
+  return true;
+}
+
+/** Every step of a workflow runs again. */
+export function clearSkips(workflow) {
+  const all = skipStore();
+  delete all[workflow.path];
+  remember(`skips:${state.root}`, all);
+}
+
 export async function runWorkflow(workflow, to) {
   const { node, body, signal } = panel(to ? `${workflow.name}, up to step ${to}` : workflow.name);
   const view = runView.create(body);
@@ -103,7 +149,9 @@ export async function runWorkflow(workflow, to) {
   const recorded = [];
   state.runs.set(workflow.path, recorded);
   try {
-    const exit = await stream('/api/run', { root: state.root, files: [workflow.path], to: to ?? null, env: state.environment }, event => {
+    // ▶ Up to here on a step turned off runs it: it is the step asked for.
+    const skip = skippedSteps(workflow).filter(index => !to || index !== to - 1).map(index => index + 1);
+    const exit = await stream('/api/run', { root: state.root, files: [workflow.path], to: to ?? null, skip, env: state.environment }, event => {
       events++;
       view.apply(event);
       // The diagram lights up as the run goes, and again when the workflow is opened later.
@@ -139,6 +187,7 @@ export function recordOutcome(path, finished) {
     passed: s.passed_steps ?? 0,
     total: s.total_steps ?? 0,
     failed: s.failed_steps ?? 0,
+    skipped: s.skipped_steps ?? 0,
     duration: s.duration_ms ?? 0,
     at: Date.now(),
     environment: state.environment

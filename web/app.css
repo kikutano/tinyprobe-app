@@ -395,6 +395,9 @@ label.check { display: block; padding: 2px 0; font-family: var(--mono); font-siz
 
 /* --- The last run, next to Run ------------------------------------------------------------------------- */
 
+.skip-note { color: var(--muted); font-size: 0.9em; }
+.link-button { background: none; border: 0; padding: 0; color: var(--accent, var(--info)); font: inherit; cursor: pointer; text-decoration: underline; }
+.step-off .step-label, .step-off .verb { opacity: 0.55; }
 .run-outcome { padding: 6px 14px; border: 1px solid var(--border); border-radius: 999px; font-weight: 600; font-size: 0.9em; font-variant-numeric: tabular-nums; }
 .run-outcome.passed { color: var(--passed); border-color: color-mix(in srgb, var(--passed) 45%, transparent); background: color-mix(in srgb, var(--passed) 10%, transparent); }
 .run-outcome.failed { color: var(--failed); border-color: color-mix(in srgb, var(--failed) 45%, transparent); background: color-mix(in srgb, var(--failed) 10%, transparent); }

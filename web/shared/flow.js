@@ -199,12 +199,15 @@
   }
 
   /**
-   * Draws the flow in `root` and returns { apply(event), reset(), select(position) }. `onSelect(position)` is
-   * called when a step is clicked or chosen with the keyboard.
+   * Draws the flow in `root` and returns { apply(event), reset(), select(position), setSkipped(indexes) }.
+   * `onSelect(position)` is called when a step is clicked or chosen with the keyboard. `skipped` are the indexes
+   * of the steps left out of runs (`run --skip`, tinyprobe spec 0021), drawn dimmed; a run's `run_started` says
+   * which ones it leaves out.
    */
-  function createFlow(root, model, { onSelect, onRunTo = null, selected = null } = {}) {
+  function createFlow(root, model, { onSelect, onRunTo = null, selected = null, skipped = [] } = {}) {
     let states = [];
     let current = selected;
+    let off = new Set(skipped);
     let NODE_W = DEFAULT_W;
     // The width of `root`, from the resize observer. Reading clientWidth while drawing forced a layout of the whole
     // page on every event of a run, and made a run of 500 steps take minutes.
@@ -261,6 +264,7 @@
     /** One ndjson event of a run of this workflow. */
     function apply(event) {
       if (event.event === 'run_started') {
+        if (Array.isArray(event.skipped)) off = new Set(event.skipped);
         reset();
         return;
       }
@@ -328,16 +332,18 @@
 
     function drawNode(node, i, top, height, valueLines_, colors) {
       const state = states[i] ?? { status: 'pending' };
+      const isOff = off.has(node.index);
       const group = svg('g', {
-        class: `flow-node flow-${state.status}${current === i ? ' flow-selected' : ''}`,
-        tabindex: 0, role: 'listitem', 'aria-label': `Step ${i + 1}: ${node.name}, ${state.status}`
+        class: `flow-node flow-${state.status}${isOff ? ' flow-off' : ''}${current === i ? ' flow-selected' : ''}`,
+        tabindex: 0, role: 'listitem', 'aria-label': `Step ${i + 1}: ${node.name}, ${isOff ? 'skipped in runs' : state.status}`
       });
       const choose = () => select(i);
       group.addEventListener('click', choose);
       group.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(); } });
 
       group.append(svg('rect', { x: NODE_X, y: top, width: NODE_W, height, rx: 8, class: 'flow-box' }));
-      const icon = { pending: '○', running: '●', passed: '✓', failed: '✗', skipped: '–' }[state.status] ?? '○';
+      const icon = isOff && (state.status === 'pending' || state.status === 'skipped') ? '⊘'
+        : { pending: '○', running: '●', passed: '✓', failed: '✗', skipped: '–' }[state.status] ?? '○';
       group.append(svg('text', { x: NODE_X + 14, y: top + 25, class: 'flow-icon' }, icon));
 
       // With onRunTo, "▶ Up to here" at the right of the first line runs the workflow up to this step. It is a
@@ -364,6 +370,7 @@
 
       // Badges at the right of the first line: polling, items, progress, duration. The name takes what is left.
       const badges = [];
+      if (isOff) badges.push('skipped in runs');
       if (node.until) badges.push(state.status === 'running' && state.attempt > 1 ? `↻ attempt ${state.attempt}` : `↻ until, every ${duration(node.until.every)}`);
       if (node.forEach !== null && node.forEach !== undefined) {
         badges.push(state.status === 'running' && state.items ? `item ${state.item}/${state.items}` : typeof node.forEach === 'number' ? `× ${node.forEach} items` : `× each of ${node.forEach}`);
@@ -392,8 +399,14 @@
       return group;
     }
 
+    /** The steps left out of runs, by index, when they change between runs. */
+    function setSkipped(indexes) {
+      off = new Set(indexes);
+      draw();
+    }
+
     reset();
-    return { apply, reset, select, get selected() { return current; }, state: i => states[i] };
+    return { apply, reset, select, setSkipped, get selected() { return current; }, state: i => states[i] };
   }
 
   Object.assign(exports, { flowModel, createFlow, placeholders, valueLines, laneColumns, laneColors });

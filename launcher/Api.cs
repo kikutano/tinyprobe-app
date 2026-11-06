@@ -195,6 +195,8 @@ internal sealed class Api
         w.WriteString("problem", _cli.Problem);
         // The visual editor reads files with `inspect --source`, from tinyprobe 0.21.0 (spec 0018).
         w.WriteBoolean("editing", _cli.Current is { } editor && (editor.Source == "env" || TinyprobeCli.AtLeast(editor.Version, TinyprobeCli.Editing)));
+        // Steps turned off in runs are passed with `run --skip`, from tinyprobe 0.24.0 (spec 0021).
+        w.WriteBoolean("skipping", _cli.Current is { } skipper && (skipper.Source == "env" || TinyprobeCli.AtLeast(skipper.Version, TinyprobeCli.Skipping)));
         w.WriteString("icon", Desktop.CanAddIcon ? _config.Shortcut : "unsupported");
         w.WriteStartArray("folders");
         foreach (var folder in _config.Folders)
@@ -723,6 +725,19 @@ internal sealed class Api
         }
         if (json.TryGetProperty("to", out var to) && to.ValueKind == JsonValueKind.Number)
             arguments.AddRange(["--to", to.GetInt32().ToString(System.Globalization.CultureInfo.InvariantCulture)]);
+        // Step numbers only: tinyprobe checks them against the workflow, as it does for --to.
+        if (json.TryGetProperty("skip", out var skip) && skip.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var step in skip.EnumerateArray())
+            {
+                if (step.ValueKind != JsonValueKind.Number || !step.TryGetInt32(out var number) || number < 1)
+                {
+                    await response.Json(400, Json.Error("skip lists step numbers."));
+                    return;
+                }
+                arguments.AddRange(["--skip", number.ToString(System.Globalization.CultureInfo.InvariantCulture)]);
+            }
+        }
         if (await EnvironmentArguments(json, root, response) is not { } environment) return;
         arguments.AddRange(environment);
         arguments.AddRange(["--reporter", "ndjson"]);

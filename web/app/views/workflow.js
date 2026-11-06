@@ -30,7 +30,10 @@ export function workflowView({ file }) {
     const model = flows.flowModel(workflow.inspect, state.variables);
     const details = h('div', { class: 'flow-details', 'aria-live': 'polite' });
     const picture = h('div', { class: 'flow' });
-    const diagram = flows.createFlow(picture, model, { onSelect: at => showStep(workflow, steps[at], diagram, details) });
+    const diagram = flows.createFlow(picture, model, {
+      onSelect: at => showStep(workflow, steps[at], diagram, details),
+      onRunTo: at => runWorkflow(workflow, model.nodes[at].index + 1)
+    });
     for (const event of state.runs.get(workflow.path) ?? []) diagram.apply(event);
     state.flow = { path: workflow.path, diagram };
     const inputs = model.inputs;
@@ -41,7 +44,7 @@ export function workflowView({ file }) {
         inputs.other.length ? h('span', { class: 'error-text' }, 'Defined nowhere: ', inputs.other.flatMap((n, i) => [h('code', null, n), i < inputs.other.length - 1 ? ', ' : ''])) : null) : null,
       picture,
       details,
-      h('p', { class: 'aside' }, 'Each colored line is a value a step saves, down to the steps that use it. Click a step to see what it sends and checks.'));
+      h('p', { class: 'aside' }, 'Each colored line is a value a step saves, down to the steps that use it. Click a step to see what it sends and checks; ▶ Up to here runs the steps before it again and stops at it.'));
   } else {
     state.flow = null;
     // Each step with how it went in the last run, as the diagram shows it; a click goes to its detail.
@@ -68,7 +71,7 @@ export function workflowView({ file }) {
         result ? h('span', { class: `code ${runView.statusClass(result.status)}` }, result.status ?? '---') : null,
         result ? ` ${runView.formatDuration(result.duration_ms)}` : run?.status === 'running' && run.items ? `item ${run.item}/${run.items}` : run?.status === 'running' && run.attempt > 1 ? `attempt ${run.attempt}` : ''),
       editStepButton(workflow, step),
-      h('button', { type: 'button', class: 'button small', title: 'Run the workflow up to this step and show its response', onclick: () => runWorkflow(workflow, step.index + 1) }, 'Run to here'));
+      h('button', { type: 'button', class: 'button small', title: 'Runs the steps before this one again, stops here and shows its response', onclick: () => runWorkflow(workflow, step.index + 1) }, '▶ Up to here'));
     }));
   }
 
@@ -83,7 +86,7 @@ export function workflowView({ file }) {
         h('button', { type: 'button', class: `button small${mode === 'list' ? ' active' : ''}`, 'aria-pressed': String(mode === 'list'), onclick: () => toggle('list') }, 'List'),
         state.info.editing ? h('button', { type: 'button', class: `button small${mode === 'edit' ? ' active' : ''}`, 'aria-pressed': String(mode === 'edit'), onclick: () => toggle('edit') }, 'Edit') : null)),
     content,
-    mode === 'list' ? h('p', { class: 'aside' }, 'Run to here runs the steps before it again each time: nothing is kept between runs.') : null);
+    mode === 'list' ? h('p', { class: 'aside' }, '▶ Up to here runs the steps before a step again each time, and stops at it: nothing is kept between runs.') : null);
 }
 
 /**
@@ -166,7 +169,7 @@ export function showStep(workflow, step, diagram, details) {
       h('span', { class: 'what' }, `${step.index + 1}. ${step.name}`),
       h('span', { class: 'panel-actions' },
         editStepButton(workflow, step),
-        h('button', { type: 'button', class: 'button small', onclick: () => runWorkflow(workflow, step.index + 1) }, 'Run to here'))),
+        h('button', { type: 'button', class: 'button small', title: 'Runs the steps before this one again, stops here and shows its response', onclick: () => runWorkflow(workflow, step.index + 1) }, '▶ Up to here'))),
     h('div', { class: 'panel-body' },
       step.type === 'call' ? h('div', { class: 'mono' }, `call ${step.call}`) : h('div', { class: 'mono' }, step.type),
       step.sequence ? h('div', { class: 'aside' }, `From the sequence ${step.sequence.name || baseName(step.sequence.file)}.`) : null,

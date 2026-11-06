@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **▶ Up to here on every step of the diagram**, not only in the list and after clicking a step: it runs the workflow up to that step, running the steps before it again, and shows its response. The button was called Run to here, which said little: it is ▶ Up to here everywhere now, with a tooltip that says what it does.
+
 ## 0.4.12
 
 - **A form keeps what you typed when you come back to the page.** The app reads the folder again when its window comes back to the front, to see what changed in your editor, and drew the whole view again: a new request, a new workflow, a step, an auth set, a block of YAML or a value of the environment lost what was typed and not saved yet. Now only the sidebar and the top bar follow the folder while a form is open; the form stays as it was, and its save still checks that the file did not change meanwhile. ↻ still draws everything again.

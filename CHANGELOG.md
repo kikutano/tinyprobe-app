@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **The overview shows how the folder is doing**: every workflow with its last run (✓ or ✗, the steps passed and failed, how long it took, when, and with which environment), a ▶ Run for each, and the totals ("8 passed · 1 failed"). The last runs are kept per folder in the browser, so the overview and the marks of the sidebar are still there when the app is opened again.
 - The page's code is split from one file of 2,100 lines into ES modules, one per view (`web/app/`), loaded by the browser as they are; the helpers that built the same rows of a form in three places are one. Nothing changes in what the app does.
 
 ## 0.4.10

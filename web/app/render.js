@@ -110,8 +110,8 @@ export function renderSidebar() {
     for (const workflow of m.workflows) {
       const outcome = state.outcomes.get(workflow.path);
       list.append(h('li', null, item({
-        mark: outcome === true ? '✓' : outcome === false ? '✗' : '○',
-        markClass: outcome === true ? 'passed' : outcome === false ? 'failed' : '',
+        mark: outcome ? (outcome.success ? '✓' : '✗') : '○',
+        markClass: outcome ? (outcome.success ? 'passed' : 'failed') : '',
         label: workflow.name,
         title: workflow.path,
         selected: isSelected('workflow', workflow.path),

@@ -28,7 +28,8 @@ export async function openRoot(root) {
   state.root = root;
   state.environment = recall(`env:${root}`, null);
   state.selection = { kind: 'home' };
-  state.outcomes = new Map();
+  // The last run of each workflow, as recordOutcome keeps it; one of a file no longer there is dropped below.
+  state.outcomes = new Map(Object.entries(recall(`outcomes:${root}`, {})).filter(([, o]) => o && typeof o === 'object'));
   remember('root', root);
   $('results').replaceChildren();
   state.history = await api(`/api/history?${query({ root })}`).catch(() => []);

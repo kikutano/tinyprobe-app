@@ -1,8 +1,8 @@
 // The first views: tinyprobe missing, no folder yet, and the overview of a folder.
-import { api, baseName, h, state } from '../base.js';
+import { api, baseName, h, runView, state } from '../base.js';
 import { openFolderDialog } from '../dialogs.js';
 import { select } from '../render.js';
-import { runAll } from '../runs.js';
+import { runAll, runWorkflow } from '../runs.js';
 import { boot, openRoot } from '../start.js';
 
 // --- tinyprobe missing -----------------------------------------------------------------------------------
@@ -48,6 +48,42 @@ export function welcomeView() {
 
 // --- Overview of the folder ------------------------------------------------------------------------------
 
+/** "3 min ago" for a time in milliseconds. */
+function ago(at) {
+  const seconds = Math.max(0, Math.round((Date.now() - at) / 1000));
+  if (seconds < 60) return 'just now';
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.round(hours / 24);
+  return days === 1 ? 'yesterday' : `${days} days ago`;
+}
+
+/** Every workflow of the folder with the last whole run of it: the state of the folder at a glance. */
+function workflowTable(workflows) {
+  const outcomes = workflows.map(w => state.outcomes.get(w.path));
+  const passed = outcomes.filter(o => o?.success).length;
+  const failed = outcomes.filter(o => o && !o.success).length;
+  const never = outcomes.filter(o => !o).length;
+  const totals = [passed ? `${passed} passed` : null, failed ? `${failed} failed` : null, never ? `${never} not run yet` : null].filter(Boolean);
+  return h('section', { class: 'workflow-table' },
+    h('h2', null, 'Workflows', h('span', { class: 'totals' }, totals.join(' · '))),
+    h('ul', null, workflows.map((workflow, i) => {
+      const o = outcomes[i];
+      const steps = (workflow.inspect.steps ?? []).length;
+      return h('li', { class: `workflow-row ${o ? (o.success ? 'passed' : 'failed') : ''}` },
+        h('span', { class: 'mark', 'aria-hidden': 'true' }, o ? (o.success ? '✓' : '✗') : '○'),
+        h('span', { class: 'what' },
+          h('button', { type: 'button', class: 'link', onclick: () => select({ kind: 'workflow', file: workflow.path }) }, workflow.name),
+          h('span', { class: 'file' }, `${workflow.path} · ${steps} ${steps === 1 ? 'step' : 'steps'}`)),
+        h('span', { class: 'last', title: o?.environment ? `with ${o.environment}` : '' }, o
+          ? `${o.passed}/${o.total} passed${o.failed ? ` · ${o.failed} failed` : ''} · ${runView.formatDuration(o.duration)} · ${ago(o.at)}`
+          : 'not run yet'),
+        h('button', { type: 'button', class: 'button small', title: `Run ${workflow.name}`, onclick: () => runWorkflow(workflow) }, '▶ Run'));
+    })));
+}
+
 export function homeView() {
   const m = state.model;
   const endpoints = m.apis.reduce((sum, file) => sum + file.endpoints.length, 0);
@@ -64,6 +100,7 @@ export function homeView() {
       m.workflows.length > 0 ? h('button', { type: 'button', class: 'button primary', onclick: runAll }, '▶ Run all workflows') : null,
       h('button', { type: 'button', class: 'button', onclick: () => select({ kind: 'new' }) }, '+ New request')),
     state.listing.truncated ? h('div', { class: 'notice info' }, `Only the first 500 YAML files are listed: open the tinyprobe/ folder of the project instead of the whole project.`) : null,
+    m.workflows.length > 0 ? workflowTable(m.workflows) : null,
     m.invalid.length > 0 ? h('div', { class: 'notice' },
       h('strong', null, m.invalid.length === 1 ? '1 file is not valid' : `${m.invalid.length} files are not valid`),
       h('ul', null, m.invalid.flatMap(file => file.errors.map(e => h('li', null, e.text))))) : null,

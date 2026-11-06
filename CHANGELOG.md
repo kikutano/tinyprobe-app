@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.13
 
 - **▶ Up to here on every step of the diagram**, not only in the list and after clicking a step: it runs the workflow up to that step, running the steps before it again, and shows its response. The button was called Run to here, which said little: it is ▶ Up to here everywhere now, with a tooltip that says what it does.
 

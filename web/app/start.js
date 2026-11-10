@@ -68,7 +68,15 @@ export async function loadListing({ quiet = false } = {}) {
     renderChrome();
     renderSidebar();
   } else {
+    // A field drawn again keeps its value (the views keep what is typed); it gets the cursor back too.
+    const focused = quiet && document.activeElement?.closest('#view') && document.activeElement.id ? document.activeElement : null;
+    const caret = focused && typeof focused.selectionStart === 'number' ? [focused.selectionStart, focused.selectionEnd] : null;
     render();
+    const again = focused && document.getElementById(focused.id);
+    if (again && again !== focused) {
+      again.focus();
+      if (caret) again.setSelectionRange?.(...caret);
+    }
   }
 }
 

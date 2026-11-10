@@ -35,15 +35,17 @@ export function endpointView({ file, name }) {
     ];
   };
 
+  // The values are kept as they are typed, not only when sent: the view is drawn again when the window comes back
+  // to the front (the folder may have changed) or when another endpoint is opened and this one again.
+  const typed = () => Object.fromEntries([...inputs].filter(([, { input }]) => input.value !== '').map(([argument, { input }]) => [argument, input.value]));
   const send = h('button', { type: 'submit', class: 'button primary' }, '▶ Send');
-  const form = h('form', { onsubmit: event => {
+  const form = h('form', { oninput: () => remember(key, typed()), onsubmit: event => {
     event.preventDefault();
-    const values = {};
+    const values = typed();
     const missing = [];
     for (const [argument, { input, required }] of inputs) {
       input.classList.remove('invalid');
-      if (input.value !== '') values[argument] = input.value;
-      else if (required) {
+      if (input.value === '' && required) {
         missing.push(argument);
         input.classList.add('invalid');
       }
@@ -62,7 +64,8 @@ export function endpointView({ file, name }) {
         free.flatMap(n => field(n, { hint: state.environment ? `not in ${baseName(state.environment)}: fill it in` : 'no environment picked: fill it in, or pick one at the top' })),
         queryNames.flatMap(n => field(n, { hint: 'query parameter, sent only when filled in' })))
       : h('p', { class: 'aside' }, 'Nothing to fill in: send it as it is.'),
-    others.length > 0 ? h('details', { class: 'more' },
+    // Open when one of its values was typed, so a value drawn again is not hidden.
+    others.length > 0 ? h('details', { class: 'more', open: others.some(n => saved[n] !== undefined && saved[n] !== '') },
       h('summary', null, `From ${baseName(state.environment)}: ${others.join(', ')} (fill in to override)`),
       h('div', { class: 'form' }, others.flatMap(n => field(n)))) : null,
     h('div', { class: 'actions' }, send,

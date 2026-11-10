@@ -140,18 +140,66 @@ export function clearSkips(workflow) {
   remember(`skips:${state.root}`, all);
 }
 
-export async function runWorkflow(workflow, to) {
-  const { node, body, signal } = panel(to ? `${workflow.name}, up to step ${to}` : workflow.name);
+// ▶ Up to here continues from where the last run stopped (tinyprobe `run --resume`, spec 0022). The state of
+// that run holds tokens, so it is kept only here, in the page's memory, never in the browser's storage: closing
+// or reloading the page forgets it, and the next ▶ Up to here runs from the start.
+const resumable = new Map();
+
+/** The last run of a workflow up to a step, or null; what it ran with decides whether the next one continues it. */
+function lastRun(workflow) {
+  return resumable.get(`${state.root}\n${workflow.path}`) ?? null;
+}
+
+/**
+ * Whether ▶ Up to here on step `to` (1-based) continues the last run, and why not: null when it continues.
+ * It continues only a run that stopped at an earlier step with every step passed, with the same environment
+ * and the same ⊘ Skip switches. tinyprobe then checks that the steps it ran did not change.
+ */
+function whyFromTheStart(last, to, switches) {
+  if (!last) return '';
+  if (!last.state) return 'The last run did not pass: running from the start.';
+  if (to <= last.to) return `Step ${to} is not after step ${last.to}, where the last run stopped: running from the start.`;
+  if (last.environment !== state.environment) return 'The environment changed: running from the start.';
+  if (last.switches !== JSON.stringify(switches)) return 'The ⊘ Skip switches changed: running from the start.';
+  return null;
+}
+
+/**
+ * Runs a workflow, or (with `to`, 1-based) up to a step: ▶ Up to here. `fromStart` runs the steps before it again
+ * even when the last run could be continued (↺ From the start).
+ */
+export async function runWorkflow(workflow, to, { fromStart = false, note = '' } = {}) {
+  const switches = skippedSteps(workflow);
+  const key = `${state.root}\n${workflow.path}`;
+  const last = lastRun(workflow);
+  const why = to && state.info.resuming && !fromStart ? whyFromTheStart(last, to, switches) : note;
+  // ▶ Up to here on a step turned off runs it: it is the step asked for, and so was the last run's. Continuing,
+  // the switches before it are passed too: tinyprobe names those steps when a value they save is missing.
+  const skip = switches.filter(index => index !== (to ?? 0) - 1 && index !== (why === null ? last.to - 1 : -1)).map(index => index + 1);
+  resumable.delete(key);
+
+  const title = !to ? workflow.name : why === null ? `${workflow.name}, steps ${last.to + 1} to ${to}` : `${workflow.name}, up to step ${to}`;
+  const { node, body, signal } = panel(title);
+  if (to && state.info.resuming) {
+    node.querySelector('.panel-head .when').before(h('button', {
+      type: 'button', class: 'button small', title: 'Runs the steps before this one again, from the first step',
+      onclick: () => { node.remove(); runWorkflow(workflow, to, { fromStart: true }); }
+    }, '↺ From the start'));
+  }
+  if (why) body.before(h('p', { class: 'run-note' }, why));
   const view = runView.create(body);
   view.reset(workflow.name, state.environment);
   state.runViews.set(workflow.path, { view, node });
   let events = 0;
-  const recorded = [];
+  // A continued run is shown after the run it continues: its steps keep their results, dimmed.
+  const recorded = why === null ? last.events.filter(e => e.event !== 'run_finished') : [];
+  for (const event of recorded) view.apply(event);
   state.runs.set(workflow.path, recorded);
+  const environment = state.environment;
   try {
-    // ▶ Up to here on a step turned off runs it: it is the step asked for.
-    const skip = skippedSteps(workflow).filter(index => !to || index !== to - 1).map(index => index + 1);
-    const exit = await stream('/api/run', { root: state.root, files: [workflow.path], to: to ?? null, skip, env: state.environment }, event => {
+    const payload = { root: state.root, files: [workflow.path], to: to ?? null, skip, env: environment };
+    if (why === null) payload.resume = last.state;
+    let exit = await stream('/api/run', payload, event => {
       events++;
       view.apply(event);
       // The diagram lights up as the run goes, and again when the workflow is opened later.
@@ -165,11 +213,19 @@ export async function runWorkflow(workflow, to) {
         if (event.event === 'run_finished') renderViewNow();
         else renderViewSoon();
       }
+      if (event.event === 'run_finished' && to) {
+        resumable.set(key, { to, environment, switches: JSON.stringify(switches), state: event.state ?? null, events: [...recorded] });
+      }
       if (event.event === 'run_finished' && !to) {
         recordOutcome(workflow.path, event);
         renderSidebar();
       }
     }, signal);
+    // tinyprobe refuses a state whose steps changed since: the run starts again from the first step, and says why.
+    if (why === null && events === 0 && exit?.code === 2 && /--resume: the steps up to step \d+ changed/.test(exit.stderr ?? '')) {
+      node.remove();
+      return runWorkflow(workflow, to, { fromStart: true, note: 'Steps that ran in the last run changed: running from the start.' });
+    }
     stopped(view, exit, events);
   } catch (e) {
     if (e.name !== 'AbortError' && !(e instanceof RestartError)) view.error(e.message);

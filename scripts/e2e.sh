@@ -100,6 +100,19 @@ else
   ok "run --skip not checked: $("$TINYPROBE" --version) has no --skip"
 fi
 
+# ▶ Up to here continued (tinyprobe spec 0022): up to the user's creation, then the rest from the state, which the
+# launcher passes on stdin. The second run deletes the user the first one created.
+if "$TINYPROBE" --help | grep -q -- '--resume'; then
+  post /api/run "{\"root\":\"$ROOT\",\"files\":[\"example/workflows/users.yaml\"],\"to\":7,\"env\":\"environment.yaml\"}" > "$WORK/resume-to.ndjson"
+  grep '"event":"run_finished"' "$WORK/resume-to.ndjson" | json "json.dumps({'root': '$ROOT', 'files': ['example/workflows/users.yaml'], 'env': 'environment.yaml', 'resume': d['state']})" > "$WORK/resume.json"
+  post /api/run "$(cat "$WORK/resume.json")" > "$WORK/resume.ndjson"
+  head -1 "$WORK/resume.ndjson" | json "d['resumed_after']" | grep -q '^6$' && grep -q '"event":"run_finished","success":true' "$WORK/resume.ndjson" \
+    || fail "run --resume: $(head -c 400 "$WORK/resume.ndjson")"
+  ok "run users.yaml up to step 7, then the rest from its state"
+else
+  ok "run --resume not checked: $("$TINYPROBE" --version) has no --resume"
+fi
+
 post /api/run "{\"root\":\"$ROOT\",\"files\":[],\"env\":\"environment.yaml\"}" > "$WORK/all.ndjson"
 tail -2 "$WORK/all.ndjson" | head -1 | json "d['event'], d['success'], d['summary']['failed_workflows']" | grep -q "suite_finished True 0" || fail "run all: $(tail -c 600 "$WORK/all.ndjson")"
 ok "run all: $(tail -2 "$WORK/all.ndjson" | head -1 | json "d['summary']['total_workflows']") workflows passed"

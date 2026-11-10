@@ -197,6 +197,8 @@ internal sealed class Api
         w.WriteBoolean("editing", _cli.Current is { } editor && (editor.Source == "env" || TinyprobeCli.AtLeast(editor.Version, TinyprobeCli.Editing)));
         // Steps turned off in runs are passed with `run --skip`, from tinyprobe 0.24.0 (spec 0021).
         w.WriteBoolean("skipping", _cli.Current is { } skipper && (skipper.Source == "env" || TinyprobeCli.AtLeast(skipper.Version, TinyprobeCli.Skipping)));
+        // ▶ Up to here continues the last run with `run --resume`, from tinyprobe 0.25.0 (spec 0022).
+        w.WriteBoolean("resuming", _cli.Current is { } resumer && (resumer.Source == "env" || TinyprobeCli.AtLeast(resumer.Version, TinyprobeCli.Resuming)));
         w.WriteString("icon", Desktop.CanAddIcon ? _config.Shortcut : "unsupported");
         w.WriteStartArray("folders");
         foreach (var folder in _config.Folders)
@@ -738,10 +740,18 @@ internal sealed class Api
                 arguments.AddRange(["--skip", number.ToString(System.Globalization.CultureInfo.InvariantCulture)]);
             }
         }
+        // The state of the last run (`run --resume`, spec 0022) holds tokens: it goes to tinyprobe on standard input,
+        // never into a file or the arguments, which other users of the machine can list.
+        string? input = null;
+        if (json.TryGetProperty("resume", out var resume) && resume.ValueKind == JsonValueKind.Object)
+        {
+            input = resume.GetRawText();
+            arguments.AddRange(["--resume", "-"]);
+        }
         if (await EnvironmentArguments(json, root, response) is not { } environment) return;
         arguments.AddRange(environment);
         arguments.AddRange(["--reporter", "ndjson"]);
-        await Stream(root, arguments, response, gone);
+        await Stream(root, arguments, response, gone, input);
     }
 
     private async Task<string[]?> EnvironmentArguments(JsonElement json, string root, HttpResponse response)
@@ -756,10 +766,15 @@ internal sealed class Api
     /// Runs tinyprobe and sends its ndjson events as they come, then one line of the app's own, `{"app":"exit"}`,
     /// with the exit code and what tinyprobe wrote on standard error. Closing the page stops the process.
     /// </summary>
-    private async Task Stream(string root, List<string> arguments, HttpResponse response, CancellationToken gone)
+    private async Task Stream(string root, List<string> arguments, HttpResponse response, CancellationToken gone, string? input = null)
     {
         if (await Cli(response) is not { } cli) return;
-        using var process = Process.Start(TinyprobeCli.StartInfo(cli.Path, arguments, root))!;
+        using var process = Process.Start(TinyprobeCli.StartInfo(cli.Path, arguments, root, input is not null))!;
+        if (input is not null)
+        {
+            await process.StandardInput.WriteAsync(input);
+            process.StandardInput.Close();
+        }
         var error = process.StandardError.ReadToEndAsync(CancellationToken.None);
         var output = await response.Stream(200, "application/x-ndjson; charset=utf-8");
         try

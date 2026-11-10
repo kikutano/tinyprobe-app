@@ -163,7 +163,7 @@ export function workflowView({ file }) {
         inputs.other.length ? h('span', { class: 'error-text' }, 'Defined nowhere: ', inputs.other.flatMap((n, i) => [h('code', null, n), i < inputs.other.length - 1 ? ', ' : ''])) : null) : null,
       picture,
       details,
-      h('p', { class: 'aside' }, 'Each colored line is a value a step saves, down to the steps that use it. Click a step to see what it sends and checks; ▶ Up to here runs the steps before it again and stops at it.'));
+      h('p', { class: 'aside' }, `Each colored line is a value a step saves, down to the steps that use it. Click a step to see what it sends and checks; ${upToHere()}`));
   } else {
     state.flow = null;
     // Each step with how it went in the last run, as the diagram shows it; a click goes to its detail.
@@ -194,7 +194,7 @@ export function workflowView({ file }) {
         result ? ` ${runView.formatDuration(result.duration_ms)}` : run?.status === 'running' && run.items ? `item ${run.item}/${run.items}` : run?.status === 'running' && run.attempt > 1 ? `attempt ${run.attempt}` : ''),
       editStepButton(workflow, step),
       skipButton(workflow, step, renderView),
-      h('button', { type: 'button', class: 'button small', title: 'Runs the steps before this one again, stops here and shows its response', onclick: () => runWorkflow(workflow, step.index + 1) }, '▶ Up to here'));
+      h('button', { type: 'button', class: 'button small', title: 'Runs the workflow up to this step, stops there and shows its response', onclick: () => runWorkflow(workflow, step.index + 1) }, '▶ Up to here'));
     }));
   }
 
@@ -214,7 +214,14 @@ export function workflowView({ file }) {
     state.info.editing ? (rename = renameForm(workflow)).node : null,
     state.info.editing ? (duplicate = duplicateForm(workflow)).node : null,
     content,
-    mode === 'list' ? h('p', { class: 'aside' }, '▶ Up to here runs the steps before a step again each time, and stops at it: nothing is kept between runs.') : null);
+    mode === 'list' ? h('p', { class: 'aside' }, upToHere()) : null);
+}
+
+/** What ▶ Up to here does, with the tinyprobe in use. */
+function upToHere() {
+  return state.info.resuming
+    ? '▶ Up to here stops at a step; on a later step it continues from where the last run stopped, and ↺ From the start runs the steps before it again.'
+    : '▶ Up to here runs the steps before a step again each time, and stops at it: nothing is kept between runs.';
 }
 
 /**
@@ -228,18 +235,22 @@ export function outcomeBadge(path) {
 }
 
 export function fillOutcome(node, path) {
-  const events = state.runs.get(path) ?? [];
+  const all = state.runs.get(path) ?? [];
+  // A resumed run's events follow those of the run it continues: the badge is about the last one.
+  const events = all.slice(Math.max(0, all.findLastIndex(e => e.event === 'run_started')));
   const started = events.find(e => e.event === 'run_started');
   const finished = events.find(e => e.event === 'run_finished');
   node.className = 'run-outcome';
   node.hidden = !started;
   if (!started) return node.replaceChildren();
-  const upTo = started.to !== null && started.to !== undefined ? ` up to step ${started.to + 1}` : '';
+  const resumed = started.resumed_after ?? null;
+  const upTo = (resumed !== null ? ` · steps ${resumed + 2} to ${(started.to ?? started.steps.length - 1) + 1}` : '')
+    + (resumed === null && started.to !== null && started.to !== undefined ? ` up to step ${started.to + 1}` : '');
   if (!finished) {
     const done = events.filter(e => e.event === 'step_completed').length;
     node.classList.add('running');
     node.title = 'Running';
-    return node.replaceChildren(`● ${done}/${(started.steps ?? []).length - (started.skipped ?? []).length}${upTo}`);
+    return node.replaceChildren(`● ${done}/${(started.steps ?? []).length - (started.skipped ?? []).length - (resumed ?? -1) - 1}${upTo}`);
   }
   const s = finished.summary;
   const parts = [`${s.passed_steps}/${s.total_steps} passed`, s.failed_steps ? `${s.failed_steps} failed` : null, s.not_run_steps ? `${s.not_run_steps} not run` : null, s.skipped_steps ? `${s.skipped_steps} skipped` : null].filter(Boolean);
@@ -253,8 +264,10 @@ export function stepStates(events) {
   const states = new Map();
   for (const e of events ?? []) {
     if (e.event === 'run_started') {
-      states.clear();
-      for (const s of e.steps ?? []) states.set(s.index, { status: 'pending' });
+      // A resumed run (tinyprobe spec 0022) keeps the states of the steps the run before it ran.
+      const after = e.resumed_after ?? -1;
+      for (const index of [...states.keys()]) if (index > after) states.delete(index);
+      for (const s of e.steps ?? []) if (s.index > after || !states.has(s.index)) states.set(s.index, { status: 'pending' });
     } else if (e.event === 'step_started') {
       // A step that starts ends the sleep before it, which has no step_completed.
       for (const [index, s] of states) if (index < e.index && s.status === 'running') s.status = 'passed';
@@ -299,7 +312,7 @@ export function showStep(workflow, step, diagram, details) {
         editStepButton(workflow, step),
         ...stepActions(workflow, step),
         skipButton(workflow, step, () => diagram.setSkipped(skippedSteps(workflow))),
-        h('button', { type: 'button', class: 'button small', title: 'Runs the steps before this one again, stops here and shows its response', onclick: () => runWorkflow(workflow, step.index + 1) }, '▶ Up to here'))),
+        h('button', { type: 'button', class: 'button small', title: 'Runs the workflow up to this step, stops there and shows its response', onclick: () => runWorkflow(workflow, step.index + 1) }, '▶ Up to here'))),
     h('div', { class: 'panel-body' },
       step.type === 'call' ? h('div', { class: 'mono' }, `call ${step.call}`) : h('div', { class: 'mono' }, step.type),
       step.sequence ? h('div', { class: 'aside' }, `From the sequence ${step.sequence.name || baseName(step.sequence.file)}.`) : null,

@@ -78,12 +78,17 @@
 
     function apply(event) {
       switch (event.event) {
-        case 'run_started':
+        case 'run_started': {
           state.started = true;
+          state.finished = null;
           // Run to here (`run --to`): the step to show when it completes, unless an earlier one failed.
           state.to = event.to ?? null;
-          for (const s of event.steps) Object.assign(step(s.index), { name: s.name, type: s.type });
+          // A run continued from the last one (`run --resume`, tinyprobe spec 0022): the steps up to `after` ran in
+          // that run. Their results are kept when the view was given that run's events first.
+          const after = event.resumed_after ?? null;
+          for (const s of event.steps) Object.assign(step(s.index), { name: s.name, type: s.type, previous: after !== null && s.index <= after });
           break;
+        }
         case 'step_started': {
           // A step that starts ends the previous sleep, which has no step_completed.
           for (const s of state.steps) if (s.type === 'sleep' && s.status === 'running') s.status = 'passed';
@@ -170,6 +175,7 @@
           s.failed_steps ? `${s.failed_steps} failed` : null,
           s.not_run_steps ? `${s.not_run_steps} not run` : null,
           s.skipped_steps ? `${s.skipped_steps} skipped` : null,
+          s.resumed_after !== null && s.resumed_after !== undefined ? `continued after step ${s.resumed_after + 1}` : null,
           `${s.checks_passed + s.checks_failed} checks`,
           `${s.http_requests} requests`,
           formatDuration(s.duration_ms)
@@ -232,7 +238,8 @@
       const list = element('ol', 'steps');
       for (const s of state.steps) {
         const items = Array.isArray(s.result?.iterations) ? s.result.iterations : null;
-        const item = row(`step step-${s.status}`, key(s.index, null), s.result !== null);
+        const item = row(`step step-${s.status}${s.previous ? ' step-previous' : ''}`, key(s.index, null), s.result !== null);
+        if (s.previous) item.title = 'From the previous run';
         item.append(element('span', 'icon', { passed: '✓', failed: '✗', running: '●', skipped: '–', pending: '○' }[s.status]));
         item.append(element('span', 'step-name', runningName(s)));
         if (s.result && items) {

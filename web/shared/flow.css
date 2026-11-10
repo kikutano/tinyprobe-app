@@ -16,6 +16,8 @@
 .flow-failed .flow-box { stroke: var(--failed); stroke-width: 2.2; }
 .flow-skipped { opacity: 0.55; }
 .flow-off { opacity: 0.5; }
+/* A step of the run a resumed run continued (tinyprobe spec 0022): its result is from that run. */
+.flow-previous { opacity: 0.7; }
 .flow-off .flow-box { stroke-dasharray: 5 4; }
 
 .flow-icon { font-size: 16px; fill: var(--muted); }

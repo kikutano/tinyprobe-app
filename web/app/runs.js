@@ -177,6 +177,7 @@ export async function runWorkflow(workflow, to, { fromStart = false, note = '' }
   // the switches before it are passed too: tinyprobe names those steps when a value they save is missing.
   const skip = switches.filter(index => index !== (to ?? 0) - 1 && index !== (why === null ? last.to - 1 : -1)).map(index => index + 1);
   resumable.delete(key);
+  const before = state.outcomes.get(workflow.path) ?? null;
 
   const title = !to ? workflow.name : why === null ? `${workflow.name}, steps ${last.to + 1} to ${to}` : `${workflow.name}, up to step ${to}`;
   const { node, body, signal } = panel(title);
@@ -216,8 +217,9 @@ export async function runWorkflow(workflow, to, { fromStart = false, note = '' }
       if (event.event === 'run_finished' && to) {
         resumable.set(key, { to, environment, switches: JSON.stringify(switches), state: event.state ?? null, events: [...recorded] });
       }
-      if (event.event === 'run_finished' && !to) {
-        recordOutcome(workflow.path, event);
+      if (event.event === 'run_finished') {
+        // A continued run counts the steps of the run it continues too: together they are one run up to `to`.
+        recordOutcome(workflow.path, event, { to, before: why === null ? before : null });
         renderSidebar();
       }
     }, signal);
@@ -233,18 +235,21 @@ export async function runWorkflow(workflow, to, { fromStart = false, note = '' }
 }
 
 /**
- * The last whole run of a workflow, for the sidebar and the overview: kept per folder in the browser, so it is
- * still there when the app is opened again. A run up to a step (▶ Up to here) is not a whole run.
+ * The last run of a workflow, for the sidebar and the overview: kept per folder in the browser, so it is still
+ * there when the app is opened again. A run up to a step (▶ Up to here) counts too, with `to` (1-based): a step
+ * that failed in it is the state of the workflow now. `before` is the outcome of the run a continued run goes on
+ * from, whose steps it adds.
  */
-export function recordOutcome(path, finished) {
+export function recordOutcome(path, finished, { to = null, before = null } = {}) {
   const s = finished.summary ?? {};
   state.outcomes.set(path, {
     success: finished.success,
-    passed: s.passed_steps ?? 0,
-    total: s.total_steps ?? 0,
+    passed: (before?.passed ?? 0) + (s.passed_steps ?? 0),
+    total: (before?.total ?? 0) + (s.total_steps ?? 0),
     failed: s.failed_steps ?? 0,
-    skipped: s.skipped_steps ?? 0,
-    duration: s.duration_ms ?? 0,
+    skipped: (before?.skipped ?? 0) + (s.skipped_steps ?? 0),
+    duration: (before?.duration ?? 0) + (s.duration_ms ?? 0),
+    to: to ?? null,
     at: Date.now(),
     environment: state.environment
   });

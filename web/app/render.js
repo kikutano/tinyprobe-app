@@ -123,7 +123,7 @@ export function renderSidebar() {
         mark: outcome ? (outcome.success ? '✓' : '✗') : '○',
         markClass: outcome ? (outcome.success ? 'passed' : 'failed') : '',
         label: workflow.name,
-        title: workflow.path,
+        title: outcome?.to ? `${workflow.path}: last run up to step ${outcome.to}, ${outcome.success ? 'passed' : 'failed'}` : workflow.path,
         selected: isSelected('workflow', workflow.path),
         onclick: () => select({ kind: 'workflow', file: workflow.path })
       })));

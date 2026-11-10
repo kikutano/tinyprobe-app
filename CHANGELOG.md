@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **The List view of a workflow fits a phone**: the name of a step was squeezed between the call and the buttons, a few letters per line ("is / gon / e"). On a screen up to 760 px wide the name gets the first line of its row, the call (cut with … when long) and the result go under it, and on a narrow phone the buttons get a line of their own.
 - **The sidebar and the overview show the last run, ▶ Up to here included**: a run up to a step that failed left the workflow's mark at ○ (or at the result of the last whole run), as if nothing had happened. The mark is now ✗ or ✓ after any run, the overview says "up to step 6", and a run continued from the last one counts the steps of both.
 - **The request line of a step no longer cuts the method**: with a long URL, `GET` was split over two lines ("GE" and "T"). The URL wraps; the method stays whole.
 - **The values of an endpoint are kept as you type them**: they were saved only when the request was sent, so coming back to the app's window (which reads the folder again) or opening another endpoint and coming back emptied the fields. They are kept per folder and endpoint, as the values sent were, and the field you were typing in gets the cursor back.

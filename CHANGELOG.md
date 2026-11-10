@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **The values of an endpoint are kept as you type them**: they were saved only when the request was sent, so coming back to the app's window (which reads the folder again) or opening another endpoint and coming back emptied the fields. They are kept per folder and endpoint, as the values sent were, and the field you were typing in gets the cursor back.
 - **▶ Up to here continues from where the last run stopped**, instead of running every step before it again: after ▶ Up to here on step 7, ▶ Up to here on step 9 runs steps 8 and 9 only, with the token, the ids and the cookies of the first run (tinyprobe's `run --resume`). It is quicker on long flows, and it does not create the same data again on every click. The steps of the last run stay in the result, dimmed and marked "from the previous run". It runs from the start, and says why in one line, when the step comes before where the last run stopped, the last run failed, the environment or the ⊘ Skip switches changed, or a step that ran was changed since (editing the next steps is fine). **↺ From the start** on the result runs the steps before it again, for example when a token has expired. The state of the last run holds tokens: it is kept only in the page, never in the browser's storage or on disk, so reloading the page forgets it. Needs tinyprobe 0.25.0 or newer; with an older one ▶ Up to here runs every step before it, as before.
 
 ## 0.4.14

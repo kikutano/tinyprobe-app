@@ -45,6 +45,9 @@
 .details h3 { margin: 12px 0 4px; font-size: 1em; }
 .request-line { display: flex; gap: 8px; font-family: var(--mono); overflow-wrap: anywhere; }
 .method { font-weight: 600; }
+/* A long URL wraps; the method next to it never does (it was cut into "GE" and "T"). */
+.request-line .method { flex-shrink: 0; white-space: nowrap; }
+.request-line .url { min-width: 0; }
 .facts { margin-top: 4px; color: var(--muted); }
 .failure { margin-top: 10px; color: var(--failed); font-weight: 600; }
 

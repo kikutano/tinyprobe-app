@@ -60,7 +60,7 @@ function ago(at) {
   return days === 1 ? 'yesterday' : `${days} days ago`;
 }
 
-/** Every workflow of the folder with the last whole run of it: the state of the folder at a glance. */
+/** Every workflow of the folder with its last run, whole or up to a step: the state of the folder at a glance. */
 function workflowTable(workflows) {
   const outcomes = workflows.map(w => state.outcomes.get(w.path));
   const passed = outcomes.filter(o => o?.success).length;
@@ -78,7 +78,7 @@ function workflowTable(workflows) {
           h('button', { type: 'button', class: 'link', onclick: () => select({ kind: 'workflow', file: workflow.path }) }, workflow.name),
           h('span', { class: 'file' }, `${workflow.path} · ${steps} ${steps === 1 ? 'step' : 'steps'}`)),
         h('span', { class: 'last', title: o?.environment ? `with ${o.environment}` : '' }, o
-          ? `${o.passed}/${o.total} passed${o.failed ? ` · ${o.failed} failed` : ''}${o.skipped ? ` · ${o.skipped} skipped` : ''} · ${runView.formatDuration(o.duration)} · ${ago(o.at)}`
+          ? `${o.passed}/${o.total} passed${o.failed ? ` · ${o.failed} failed` : ''}${o.skipped ? ` · ${o.skipped} skipped` : ''}${o.to ? ` · up to step ${o.to}` : ''} · ${runView.formatDuration(o.duration)} · ${ago(o.at)}`
           : 'not run yet'),
         h('button', { type: 'button', class: 'button small', title: `Run ${workflow.name}`, onclick: () => runWorkflow(workflow) }, '▶ Run'));
     })));

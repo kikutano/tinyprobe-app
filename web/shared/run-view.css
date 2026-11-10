@@ -30,6 +30,7 @@
 .step-failed .icon, .step-failed .step-name { color: var(--failed); }
 .step-running .icon { color: var(--running); }
 .step-skipped, .step-pending { color: var(--muted); }
+.step-previous { opacity: 0.6; }
 .icon { width: 1em; text-align: center; }
 .duration { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 5em; text-align: right; }
 

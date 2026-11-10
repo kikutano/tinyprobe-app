@@ -264,8 +264,21 @@
     /** One ndjson event of a run of this workflow. */
     function apply(event) {
       if (event.event === 'run_started') {
-        if (Array.isArray(event.skipped)) off = new Set(event.skipped);
-        reset();
+        const after = event.resumed_after;
+        if (after === null || after === undefined) {
+          if (Array.isArray(event.skipped)) off = new Set(event.skipped);
+          reset();
+          return;
+        }
+        // A run continued from the last one (`run --resume`, tinyprobe spec 0022): the steps up to `after` ran in
+        // that run and keep its results; its `skipped` lists only the steps after them.
+        off = new Set([...off].filter(index => index <= after).concat(event.skipped ?? []));
+        model.nodes.forEach((n, i) => {
+          states[i] = n.index <= after
+            ? { ...(states[i] ?? { status: 'pending', attempt: 1, item: null, items: null, result: null }), previous: true }
+            : { status: 'pending', attempt: 1, item: null, items: null, result: null };
+        });
+        drawSoon();
         return;
       }
       const at = position(event.index);
@@ -334,7 +347,7 @@
       const state = states[i] ?? { status: 'pending' };
       const isOff = off.has(node.index);
       const group = svg('g', {
-        class: `flow-node flow-${state.status}${isOff ? ' flow-off' : ''}${current === i ? ' flow-selected' : ''}`,
+        class: `flow-node flow-${state.status}${isOff ? ' flow-off' : ''}${state.previous ? ' flow-previous' : ''}${current === i ? ' flow-selected' : ''}`,
         tabindex: 0, role: 'listitem', 'aria-label': `Step ${i + 1}: ${node.name}, ${isOff ? 'skipped in runs' : state.status}`
       });
       const choose = () => select(i);
@@ -363,7 +376,7 @@
         const x = NODE_X + NODE_W - 10 - RUN_W;
         button.append(svg('rect', { x, y: top + 10, width: RUN_W, height: 22, rx: 11 }));
         button.append(svg('text', { x: x + RUN_W / 2, y: top + 25, 'text-anchor': 'middle' }, '▶ Up to here'));
-        button.append(svg('title', null, 'Runs the steps before this one again, stops here and shows its response'));
+        button.append(svg('title', null, 'Runs the workflow up to this step, stops there and shows its response'));
         group.append(button);
         right = x - 10;
       }
@@ -371,6 +384,7 @@
       // Badges at the right of the first line: polling, items, progress, duration. The name takes what is left.
       const badges = [];
       if (isOff) badges.push('skipped in runs');
+      if (state.previous) badges.push('from the previous run');
       if (node.until) badges.push(state.status === 'running' && state.attempt > 1 ? `↻ attempt ${state.attempt}` : `↻ until, every ${duration(node.until.every)}`);
       if (node.forEach !== null && node.forEach !== undefined) {
         badges.push(state.status === 'running' && state.items ? `item ${state.item}/${state.items}` : typeof node.forEach === 'number' ? `× ${node.forEach} items` : `× each of ${node.forEach}`);

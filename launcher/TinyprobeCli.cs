@@ -21,6 +21,8 @@ internal sealed class TinyprobeCli(AppPaths paths)
 
     /// <summary>The first tinyprobe with `run --skip`, which the steps turned off in the page are passed with.</summary>
     public const string Skipping = "0.24.0";
+    /// <summary>`run --resume`, a run continued from the state of the last one (tinyprobe spec 0022).</summary>
+    public const string Resuming = "0.25.0";
 
     private const string Releases = "https://github.com/kikutano/tinyprobe/releases/latest/download";
 
@@ -189,11 +191,12 @@ internal sealed class TinyprobeCli(AppPaths paths)
     }
 
     /// <summary>Starts tinyprobe with its arguments as they are: no shell, whatever they contain.</summary>
-    public static ProcessStartInfo StartInfo(string executable, IEnumerable<string> arguments, string directory)
+    public static ProcessStartInfo StartInfo(string executable, IEnumerable<string> arguments, string directory, bool input = false)
     {
         var info = new ProcessStartInfo(executable)
         {
             WorkingDirectory = directory,
+            RedirectStandardInput = input,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,

@@ -1,7 +1,8 @@
 // New request: the form of an endpoint, new or edited.
-import { api, control, core, editing, h, query, recall, remember, RestartError, rowValues, showMessage, state, text, valueRow } from '../base.js';
+import { api, control, core, editing, h, query, recall, remember, RestartError, rowValues, showMessage, state, text, valueRow, withPlaceholders } from '../base.js';
 import { select } from '../render.js';
 import { loadListing } from '../start.js';
+import { describeAuthSet, whereFrom, writtenFile } from '../globals.js';
 
 // --- New request -----------------------------------------------------------------------------------------
 
@@ -25,6 +26,17 @@ export function newRequestView(edit = null) {
   const method = control('select', { id: 'new-method' }, ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].map(m => h('option', { value: m, selected: (draft.method ?? 'GET') === m }, m)));
   const path = control('input', { id: 'new-path', class: 'input mono', placeholder: '/users/${id}', value: draft.path ?? '', spellcheck: 'false' });
   const auth = control('select', { id: 'new-auth' }, h('option', { value: '' }, 'None'));
+  // What the chosen auth set sends and where its ${…} come from: its name alone says nothing.
+  const authHint = h('div', { class: 'hint auth-hint' });
+  let authSets = {};
+  const showAuth = () => {
+    const sends = describeAuthSet(authSets[auth.value]);
+    const names = [...new Set([...sends.matchAll(/\$\{([^}$]+)\}/g)].map(m => m[1]))];
+    authHint.replaceChildren(...(auth.value && sends
+      ? ['Sends ', ...withPlaceholders(sends), names.length > 0 ? ` · ${names.map(whereFrom).join(' · ')}` : '']
+      : ['An auth set adds the headers of a login to the request, e.g. Authorization: Bearer ${token}. Add one under Auth sets.']));
+  };
+  auth.addEventListener('change', showAuth);
   const queryNames = control('input', { id: 'new-query', class: 'input mono', placeholder: 'page, search', value: draft.query ?? '', spellcheck: 'false' });
   const body = control('textarea', { id: 'new-body', placeholder: '{ "title": "${title}" }', spellcheck: 'false' });
   body.value = draft.body ?? '';
@@ -62,8 +74,13 @@ export function newRequestView(edit = null) {
     if (chosen) {
       fileText = edit ? edit.text : await text(`/api/file?${query({ root: state.root, path: chosen })}`).catch(() => null);
       existingNames = (apiFiles.find(a => a.path === chosen)?.endpoints.map(e => e.name) ?? []).filter(n => n !== edit?.name);
-      for (const set of core.childKeys(fileText ?? '', 'auth')) auth.append(h('option', { value: set, selected: draft.auth === set }, set));
+      authSets = state.info.editing ? (await writtenFile(chosen).catch(() => null))?.inspect?.source?.auth ?? {} : {};
+      for (const set of core.childKeys(fileText ?? '', 'auth')) {
+        const sends = describeAuthSet(authSets[set]);
+        auth.append(h('option', { value: set, selected: draft.auth === set }, sends ? `${set} — ${sends}` : set));
+      }
     }
+    showAuth();
   }
 
   function collect() {
@@ -172,7 +189,7 @@ export function newRequestView(edit = null) {
       h('label', { for: 'new-method' }, 'Method'), method,
       h('label', { for: 'new-path' }, 'Path'), path,
       h('div', { class: 'hint' }, 'Write ${name} where a value goes: /users/${id}. Each one becomes a value to fill in when you send it.'),
-      h('label', { for: 'new-auth' }, 'Auth'), auth,
+      h('label', { for: 'new-auth' }, 'Auth'), auth, authHint,
       h('label', { for: 'new-query' }, 'Query'), queryNames,
       h('div', { class: 'hint' }, 'Names of query parameters, separated by commas; each is sent only when it has a value.'),
       h('label', null, 'Headers'), h('div', null, headerRows, h('button', { type: 'button', class: 'button small', onclick: () => { addHeader(); } }, '+ Header')),

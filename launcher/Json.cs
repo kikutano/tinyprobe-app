@@ -9,10 +9,10 @@ internal static class Json
 {
     private static readonly JsonWriterOptions Options = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
-    public static byte[] Write(Action<Utf8JsonWriter> write)
+    public static byte[] Write(Action<Utf8JsonWriter> write, bool indented = false)
     {
         var buffer = new ArrayBufferWriter<byte>();
-        using (var writer = new Utf8JsonWriter(buffer, Options)) write(writer);
+        using (var writer = new Utf8JsonWriter(buffer, indented ? Options with { Indented = true } : Options)) write(writer);
         return buffer.WrittenSpan.ToArray();
     }
 

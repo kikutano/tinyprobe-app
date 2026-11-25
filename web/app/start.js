@@ -1,7 +1,8 @@
 // Start: the launcher's state, the folder's files read through tinyprobe inspect, the environment.
-import { $, api, baseName, core, h, query, recall, remember, RestartError, showFatal, showMessage, showRestart, slash, state, text } from './base.js';
+import { $, api, baseName, core, envFile, h, query, recall, remember, RestartError, showFatal, showMessage, showRestart, slash, state, text } from './base.js';
 import { checkUpdates, renderVersions } from './dialogs.js';
 import { holdsInput, render, renderChrome, renderSidebar } from './render.js';
+import { loadGlobals } from './globals.js';
 import { stream } from './runs.js';
 
 // --- Start ---------------------------------------------------------------------------------------------
@@ -64,6 +65,7 @@ export async function loadListing({ quiet = false } = {}) {
   // One environment file: nothing to choose.
   if (!state.environment && state.listing.environments.length === 1 && recall(`env:${state.root}`, undefined) === undefined) state.environment = state.listing.environments[0];
   await loadVariables();
+  await loadGlobals();
   if (quiet && holdsInput()) {
     renderChrome();
     renderSidebar();
@@ -139,9 +141,12 @@ export function progress(step) {
 
 export async function loadVariables() {
   state.variables = [];
+  state.variableValues = new Map();
   if (!state.environment) return;
   const content = await text(`/api/file?${query({ root: state.root, path: state.environment })}`).catch(() => null);
-  if (content !== null) state.variables = core.topLevelKeys(content);
+  if (content === null) return;
+  state.variables = core.topLevelKeys(content);
+  state.variableValues = new Map(envFile.parse(content).map(v => [v.name, v.value]));
 }
 
 /** The folder as people look at it: API files with their endpoints, workflows, sequences, and invalid files. */

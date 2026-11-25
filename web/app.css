@@ -453,3 +453,52 @@ label.check { display: block; padding: 2px 0; font-family: var(--mono); font-siz
 .head-form-note { flex-basis: 100%; grid-column: 1 / -1; color: var(--muted); font: 0.82em var(--mono); }
 .head-form > div[aria-live] { flex-basis: 100%; grid-column: 1 / -1; }
 .panel-actions { flex-wrap: wrap; justify-content: flex-end; }
+
+/* --- Global variables (tinyprobe spec 0023) ------------------------------------------------------------ */
+.globals-box { border: 1px solid var(--border); border-radius: 8px; background: var(--panel); padding: 10px 12px; margin: 12px 0; display: grid; gap: 6px; }
+.globals-title { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 0.9em; }
+.globals-section { display: grid; gap: 4px; }
+.globals-section-title { font-size: 0.75em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-top: 4px; }
+.global-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.92em; padding: 2px 6px 2px 4px; min-height: 1.9em; border-radius: 6px; }
+.global-name { font-family: var(--mono); font-weight: 600; }
+.global-text strong { font-weight: 700; }
+/* A check on green when the variable has a value; an empty grey circle, and grey text, when it has none yet. */
+.global-status { flex: none; width: 1.25em; height: 1.25em; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.8em; font-weight: 700; line-height: 1; }
+.global-line.set .global-status { background: var(--passed); color: #fff; }
+.global-line.set .global-name { color: var(--passed); }
+.global-line.unset .global-status { border: 1.5px solid var(--muted); }
+.global-line.unset .global-name, .global-line.unset .global-text { color: var(--muted); }
+/* Just saved: the line flashes green once and the check pops. */
+.global-line.just-saved { animation: global-saved 2.4s ease-out both; }
+.global-line.just-saved .global-status { animation: global-pop 0.5s ease-out both; }
+@keyframes global-saved {
+  0%, 35% { background: color-mix(in srgb, var(--passed) 22%, transparent); }
+  100% { background: transparent; }
+}
+@keyframes global-pop {
+  0% { transform: scale(0.4); }
+  60% { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .global-line.just-saved, .global-line.just-saved .global-status { animation: none; }
+  .global-line.just-saved { background: color-mix(in srgb, var(--passed) 12%, transparent); }
+}
+.keep-bar { padding: 8px 12px; border-top: 1px solid var(--border); display: grid; gap: 8px; justify-items: start; }
+.keep-form { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.keep-form .select { width: auto; max-width: min(30em, 100%); }
+.keep-form .input { width: 12em; }
+.globals-table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.92em; }
+.globals-table th, .globals-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.globals-table .row-actions { display: flex; gap: 6px; white-space: nowrap; }
+.global-value { font-family: var(--mono); background: var(--code-bg); padding: 1px 4px; border-radius: 4px; cursor: pointer; word-break: break-all; }
+.globals-switch { display: inline-flex; align-items: center; gap: 4px; font-size: 0.88em; color: var(--muted); }
+@media (max-width: 640px) {
+  .globals-table thead { display: none; }
+  .globals-table tr { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--border); padding: 6px 0; }
+  .globals-table td { border: 0; padding: 2px 4px; }
+}
+.global-line .aside { margin: 0; }
+
+/* The ${…} of paths and step names: the variables in their own color. */
+.placeholder { color: var(--passed); font-weight: 600; }

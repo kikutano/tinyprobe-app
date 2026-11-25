@@ -40,6 +40,17 @@ export function newRequestView(edit = null) {
   };
   (draft.headers ?? []).forEach(addHeader);
 
+  // Global variables (tinyprobe spec 0023): values of a 2xx response this endpoint saves for the next single calls.
+  const globalRows = h('div', { class: 'rows' });
+  const addGlobal = (global = { name: '', path: '' }) => {
+    const row = h('div', { class: 'row' },
+      h('input', { class: 'input mono', placeholder: 'token', value: global.name, 'aria-label': 'Global variable name', oninput: changed }),
+      h('input', { class: 'input mono', placeholder: '$.access_token', value: global.path, 'aria-label': 'JSONPath of the response', oninput: changed }),
+      h('button', { type: 'button', class: 'icon-button', 'aria-label': 'Remove this global variable', onclick: () => { row.remove(); changed(); } }, '✕'));
+    globalRows.append(row);
+  };
+  (draft.globals ?? []).forEach(addGlobal);
+
   let fileText = null;
   let existingNames = [];
   async function fileChanged() {
@@ -67,6 +78,7 @@ export function newRequestView(edit = null) {
       query: queryNames.value,
       body: body.value,
       headers: [...headerRows.children].map(row => ({ name: row.children[0].value.trim(), value: row.children[1].value })).filter(h => h.name || h.value),
+      globals: [...globalRows.children].map(row => ({ name: row.children[0].value.trim(), path: row.children[1].value.trim() })).filter(g => g.name || g.path),
       defaults: rowValues(defaultRows)
     };
   }
@@ -104,7 +116,8 @@ export function newRequestView(edit = null) {
       name: values.name, method: values.method, path: values.path, auth: values.auth,
       query: values.query.split(','), headers: values.headers, body: values.body,
       // Only the placeholders given a default become params: the others stay free, filled by the call or the environment.
-      defaults: values.defaults.filter(d => d.value !== '')
+      defaults: values.defaults.filter(d => d.value !== ''),
+      globals: values.globals
     };
     let target = values.file;
     let result;
@@ -164,7 +177,9 @@ export function newRequestView(edit = null) {
       h('div', { class: 'hint' }, 'Names of query parameters, separated by commas; each is sent only when it has a value.'),
       h('label', null, 'Headers'), h('div', null, headerRows, h('button', { type: 'button', class: 'button small', onclick: () => { addHeader(); } }, '+ Header')),
       h('label', { for: 'new-body' }, 'JSON body'), body,
-      h('label', null, 'Defaults'), defaultRows),
+      h('label', null, 'Defaults'), defaultRows,
+      h('label', null, 'Saves as global'), h('div', null, globalRows, h('button', { type: 'button', class: 'button small', onclick: () => { addGlobal(); } }, '+ Global variable')),
+      h('div', { class: 'hint' }, 'After a 2xx response of a single call, each value (a JSONPath of the response) is saved as a global variable that other endpoints use, e.g. token from $.access_token for Authorization: Bearer ${token}.')),
     h('div', { class: 'actions' }, save,
       edit ? h('button', { type: 'button', class: 'button', onclick: () => select({ kind: 'endpoint', file: edit.file, name: edit.name }) }, 'Cancel') : null,
       h('span', { class: 'aside' }, edit ? 'Only this endpoint is rewritten; tinyprobe checks the file before it is kept.' : 'The request is added to the YAML file, which tinyprobe checks before it is kept.')),

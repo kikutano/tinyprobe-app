@@ -148,6 +148,18 @@ public sealed class TinyprobeCliTests
     [InlineData("0.20", true)]
     public void Versions_AreComparedAsNumbers(string version, bool expected) =>
         Assert.Equal(expected, TinyprobeCli.AtLeast(version, "0.20.0"));
+
+    [Theory]
+    [InlineData("0.26.0", "env", true)]
+    [InlineData("0.25.0", "env", false)]          // the latest release given by TINYPROBE_PATH, before the feature
+    [InlineData("0.0.0-dev", "env", true)]        // a development build has every feature
+    [InlineData("0.25.0", "path", false)]
+    [InlineData("0.27.1", "app", true)]
+    public void AFeature_IsThereFromItsVersion_OrInADevelopmentBuild(string version, string source, bool expected) =>
+        Assert.Equal(expected, TinyprobeCli.Has(new CliInfo("/bin/tinyprobe", version, source), TinyprobeCli.Globals));
+
+    [Fact]
+    public void NoTinyprobe_HasNoFeature() => Assert.False(TinyprobeCli.Has(null, TinyprobeCli.Globals));
 }
 
 /// <summary>The launcher's guards, against a real server on a free port.</summary>
@@ -359,6 +371,46 @@ public sealed class ApiTests : IDisposable
         Assert.Equal("""[{"endpoint":"get_user","status":200}]""", read.Body);
         Assert.Single(Directory.GetFiles(Path.Combine(_data, "history")));
         Assert.Empty(Directory.GetFiles(_folder, "*.json", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public async Task GlobalVariables_AreSetDeletedAndCleared_InTheFolder()
+    {
+        var cookie = await Session();
+        var file = Path.Combine(_folder, "globals.local.json");
+        File.WriteAllText(file, """{ "token": { "value": "abc", "from": "login", "at": "2026-11-25T10:00:00Z" }, "lang": "it" }""");
+
+        var read = await Send("GET", $"/api/globals?root={Root}", null, cookie);
+        var set = await Send("POST", "/api/globals", $$"""{"root":"{{RootJson}}","action":"set","name":"user_id","value":7,"from":"me"}""", cookie, Origin);
+        var replaced = await Send("POST", "/api/globals", $$"""{"root":"{{RootJson}}","action":"set","name":"token","value":"xyz"}""", cookie, Origin);
+        var deleted = await Send("POST", "/api/globals", $$"""{"root":"{{RootJson}}","action":"delete","name":"lang"}""", cookie, Origin);
+        using var after = JsonDocument.Parse(File.ReadAllText(file));
+        var cleared = await Send("POST", "/api/globals", $$"""{"root":"{{RootJson}}","action":"clear"}""", cookie, Origin);
+        var noName = await Send("POST", "/api/globals", $$"""{"root":"{{RootJson}}","action":"set"}""", cookie, Origin);
+
+        Assert.Equal(200, read.Status);
+        Assert.Contains("\"lang\": \"it\"", read.Body);
+        Assert.Equal((200, 200, 200), (set.Status, replaced.Status, deleted.Status));
+        // Set again in its place, by hand; a new one last, with the endpoint it came from; the other one gone.
+        Assert.Equal(["token", "user_id"], after.RootElement.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(("xyz", "by hand"), (after.RootElement.GetProperty("token").GetProperty("value").GetString(), after.RootElement.GetProperty("token").GetProperty("from").GetString()));
+        Assert.Equal((7, "me"), (after.RootElement.GetProperty("user_id").GetProperty("value").GetInt32(), after.RootElement.GetProperty("user_id").GetProperty("from").GetString()));
+        Assert.Equal(200, cleared.Status);
+        Assert.Equal("{}", File.ReadAllText(file).Trim());
+        Assert.Equal(400, noName.Status);
+    }
+
+    [Fact]
+    public async Task GlobalVariables_ReadNothingWhenTheFileIsMissing_AndSayWhenItIsNotJson()
+    {
+        var cookie = await Session();
+
+        var missing = await Send("GET", $"/api/globals?root={Root}", null, cookie);
+        File.WriteAllText(Path.Combine(_folder, "globals.local.json"), "[1, 2]");
+        var invalid = await Send("GET", $"/api/globals?root={Root}", null, cookie);
+
+        Assert.Equal((200, "{}"), (missing.Status, missing.Body));
+        Assert.Equal(422, invalid.Status);
     }
 
     [Fact]

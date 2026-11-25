@@ -97,6 +97,8 @@ internal sealed class Api
             case ("POST", "/api/history"): await WriteHistory(request, response); break;
             case ("POST", "/api/call"): await Call(request, response, gone); break;
             case ("POST", "/api/run"): await Run(request, response, gone); break;
+            case ("GET", "/api/globals"): await ReadGlobals(request, response); break;
+            case ("POST", "/api/globals"): await WriteGlobals(request, response); break;
             case ("POST", "/api/icon"): await Icon(request, response); break;
             case ("GET", "/api/updates"): await Updates(request, response, gone); break;
             case ("POST", "/api/updates"): await SetUpdates(request, response); break;
@@ -194,11 +196,13 @@ internal sealed class Api
         }
         w.WriteString("problem", _cli.Problem);
         // The visual editor reads files with `inspect --source`, from tinyprobe 0.21.0 (spec 0018).
-        w.WriteBoolean("editing", _cli.Current is { } editor && (editor.Source == "env" || TinyprobeCli.AtLeast(editor.Version, TinyprobeCli.Editing)));
+        w.WriteBoolean("editing", TinyprobeCli.Has(_cli.Current, TinyprobeCli.Editing));
         // Steps turned off in runs are passed with `run --skip`, from tinyprobe 0.24.0 (spec 0021).
-        w.WriteBoolean("skipping", _cli.Current is { } skipper && (skipper.Source == "env" || TinyprobeCli.AtLeast(skipper.Version, TinyprobeCli.Skipping)));
+        w.WriteBoolean("skipping", TinyprobeCli.Has(_cli.Current, TinyprobeCli.Skipping));
         // ▶ Up to here continues the last run with `run --resume`, from tinyprobe 0.25.0 (spec 0022).
-        w.WriteBoolean("resuming", _cli.Current is { } resumer && (resumer.Source == "env" || TinyprobeCli.AtLeast(resumer.Version, TinyprobeCli.Resuming)));
+        w.WriteBoolean("resuming", TinyprobeCli.Has(_cli.Current, TinyprobeCli.Resuming));
+        // Single calls read and save global variables with `--globals`, from tinyprobe 0.26.0 (spec 0023).
+        w.WriteBoolean("globals", SupportsGlobals);
         w.WriteString("icon", Desktop.CanAddIcon ? _config.Shortcut : "unsupported");
         w.WriteStartArray("folders");
         foreach (var folder in _config.Folders)
@@ -701,6 +705,8 @@ internal sealed class Api
                 }
         if (await EnvironmentArguments(json, root, response) is not { } environment) return;
         arguments.AddRange(environment);
+        // Single calls always read and save the global variables of the folder.
+        if (SupportsGlobals) arguments.AddRange(["--globals", GlobalsFileName]);
         arguments.AddRange(["--reporter", "ndjson"]);
         await Stream(root, arguments, response, gone);
     }
@@ -750,8 +756,100 @@ internal sealed class Api
         }
         if (await EnvironmentArguments(json, root, response) is not { } environment) return;
         arguments.AddRange(environment);
+        // Workflows start from zero; they share the global variables only when the page's switch says so.
+        if (SupportsGlobals && json.TryGetProperty("globals", out var shared) && shared.ValueKind == JsonValueKind.True)
+            arguments.AddRange(["--globals", GlobalsFileName]);
         arguments.AddRange(["--reporter", "ndjson"]);
         await Stream(root, arguments, response, gone, input);
+    }
+
+    // --- Global variables (tinyprobe spec 0023) -----------------------------------------------------------------
+    // Saved by single calls: tinyprobe reads and writes them (--globals) in this file of the opened folder, next to
+    // the environment files. The page shows them and edits them by hand.
+
+    private const string GlobalsFileName = "globals.local.json";
+
+    private bool SupportsGlobals => TinyprobeCli.Has(_cli.Current, TinyprobeCli.Globals);
+
+    private async Task ReadGlobals(HttpRequest request, HttpResponse response)
+    {
+        if (await RootOf(request.Query.GetValueOrDefault("root"), response) is not { } root) return;
+        var file = Path.Combine(root, GlobalsFileName);
+        var bytes = File.Exists(file) ? await File.ReadAllBytesAsync(file) : "{}"u8.ToArray();
+        try
+        {
+            using var check = JsonDocument.Parse(bytes);
+            if (check.RootElement.ValueKind != JsonValueKind.Object) throw new JsonException("not an object");
+        }
+        catch (JsonException ex)
+        {
+            await response.Json(422, Json.Error($"{GlobalsFileName} is not a JSON object of variables: {ex.Message}"));
+            return;
+        }
+        await response.Json(200, bytes);
+    }
+
+    /// <summary>Sets one variable (typed in, or picked from a response), deletes one, or clears them all.</summary>
+    private async Task WriteGlobals(HttpRequest request, HttpResponse response)
+    {
+        using var body = Parse(request);
+        if (body is null || await RootOf(Json.String(body.RootElement, "root"), response) is not { } root) return;
+        var json = body.RootElement;
+        var action = Json.String(json, "action");
+        var name = Json.String(json, "name");
+        if (action is not ("set" or "delete" or "clear") || (action != "clear" && string.IsNullOrEmpty(name)))
+        {
+            await response.Json(400, Json.Error("Set or delete a variable by name, or clear them all."));
+            return;
+        }
+
+        var file = Path.Combine(root, GlobalsFileName);
+        using var current = File.Exists(file) ? TryParse(await File.ReadAllBytesAsync(file)) : null;
+        var at = DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture);
+        var written = Json.Write(w =>
+        {
+            w.WriteStartObject();
+            bool replaced = false;
+            if (action != "clear" && current?.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var property in current.RootElement.EnumerateObject())
+                {
+                    if (property.Name != name)
+                    {
+                        property.WriteTo(w);
+                        continue;
+                    }
+                    if (action == "set")
+                    {
+                        WriteByHand(w, name!, json, at);
+                        replaced = true;
+                    }
+                }
+            }
+            if (action == "set" && !replaced)
+                WriteByHand(w, name!, json, at);
+            w.WriteEndObject();
+        }, indented: true);   // written like tinyprobe writes it: people read and edit this file
+        var temporary = file + ".tmp";
+        await File.WriteAllBytesAsync(temporary, written);
+        File.Move(temporary, file, overwrite: true);
+        await response.Json(200, written);
+
+        static void WriteByHand(Utf8JsonWriter w, string name, JsonElement json, string at)
+        {
+            w.WriteStartObject(name);
+            w.WritePropertyName("value");
+            if (json.TryGetProperty("value", out var value)) value.WriteTo(w); else w.WriteStringValue("");
+            // A value picked from a response says which endpoint gave it; one typed in says so.
+            w.WriteString("from", Json.String(json, "from") is { Length: > 0 } from ? from : "by hand");
+            w.WriteString("at", at);
+            w.WriteEndObject();
+        }
+
+        static JsonDocument? TryParse(byte[] bytes)
+        {
+            try { return JsonDocument.Parse(bytes); } catch (JsonException) { return null; }
+        }
     }
 
     private async Task<string[]?> EnvironmentArguments(JsonElement json, string root, HttpResponse response)

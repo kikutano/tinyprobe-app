@@ -155,6 +155,9 @@
       }
       field('body', toYaml(body, indent * 3));
     }
+    // Global variables (tinyprobe spec 0023): values of a 2xx response saved for the next single calls.
+    const globals = (request.globals ?? []).filter(g => g.name && g.path);
+    if (globals.length > 0) field('globals', globals.map(g => `\n${unit}${unit}${unit}${scalar(g.name)}: ${String(g.path).trim().startsWith('{') ? String(g.path).trim() : scalar(g.path)}`).join(''));
     return lines.join('\n') + '\n';
   }
 

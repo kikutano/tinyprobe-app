@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.16
+
+- **Global variables: log in once, then call what needs the token.** An endpoint can save values of its response for the next calls (tinyprobe's `globals`, spec 0023): `login` saves `token` from `$.access_token`, and `me`, which sends `Authorization: Bearer ${token}`, works on its own, no workflow needed. On an endpoint, a box shows what it **saves** (`token: from $.access_token of the response`, with the value saved now) and what it **uses** (`token: saved from login endpoint · 10:12`); a variable with a value has a green check, one not saved yet a grey circle and **▶ Call login**, which sends the endpoint that saves it with the values last typed in its form. A line flashes green when ▶ Send saves it.
+- **Save a value as a global variable** from any 2xx JSON response: pick the value and a name, and the endpoint saves it from then on (the app writes `globals` into its API file, which tinyprobe checks) and now. The form of an endpoint has the same rows, under "Saves as global".
+- **Global variables** in the sidebar lists them, with the value (click to see it all), the endpoint that saved it, when, and the endpoints that use it: edit, delete, delete all, or set one by hand. They are kept in `globals.local.json` in the folder you opened: keep it out of Git, it holds tokens (`tinyprobe init` adds it to `.gitignore`).
+- **Workflows still start from zero**: a workflow uses the global variables only when "uses global variables" next to ▶ Run is on (off by default, per folder), for trying things by hand; CI never uses them.
+- **The fields of an endpoint show the value they get when left empty**, in grey: `baseUrl` shows `http://localhost:5122/` from the environment, a global variable its value; secrets show as dots. Typing in one overrides it for that call, as before.
+- **Fields in the order of the file**: the params of an endpoint were shown with the required ones first (`password` above `username`); they keep the order of the API file, a required one marked with *.
+- **The `${…}` of a path and of step names are colored**, so the variables stand out from the rest of the path.
+- Needs tinyprobe 0.26.0 or newer for global variables; with an older one nothing of this is shown and calls work as before.
+
 ## 0.4.15
 
 - **▶ Up to here continues from where the last run stopped**, instead of running every step before it again: after ▶ Up to here on step 7, ▶ Up to here on step 9 runs steps 8 and 9 only, with the token, the ids and the cookies of the first run (tinyprobe's `run --resume`). It is quicker on long flows, and it does not create the same data again on every click. The steps of the last run stay in the result, dimmed and marked "from the previous run". It runs from the start, and says why in one line, when the step comes before where the last run stopped, the last run failed, the environment or the ⊘ Skip switches changed, or a step that ran was changed since (editing the next steps is fine). **↺ From the start** on the result runs the steps before it again, for example when a token has expired. The state of the last run holds tokens: it is kept only in the page, never in the browser's storage or on disk, so reloading the page forgets it. Needs tinyprobe 0.25.0 or newer; with an older one ▶ Up to here runs every step before it, as before.

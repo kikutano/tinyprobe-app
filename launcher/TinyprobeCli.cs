@@ -23,6 +23,8 @@ internal sealed class TinyprobeCli(AppPaths paths)
     public const string Skipping = "0.24.0";
     /// <summary>`run --resume`, a run continued from the state of the last one (tinyprobe spec 0022).</summary>
     public const string Resuming = "0.25.0";
+    /// <summary>`--globals`, the global variables of single calls (tinyprobe spec 0023).</summary>
+    public const string Globals = "0.26.0";
 
     private const string Releases = "https://github.com/kikutano/tinyprobe/releases/latest/download";
 
@@ -64,6 +66,14 @@ internal sealed class TinyprobeCli(AppPaths paths)
             _problem = problem;
         }
     }
+
+    /// <summary>
+    /// Whether the tinyprobe in use has a feature that came in <paramref name="version"/>. A development build
+    /// (`0.0.0-dev`, from TINYPROBE_PATH) has them all; any other binary is judged by its version, also one given
+    /// with TINYPROBE_PATH (CI passes the latest release that way, which may come before a feature).
+    /// </summary>
+    public static bool Has(CliInfo? cli, string version) =>
+        cli is { } c && (c.Version.StartsWith("0.0.0", StringComparison.Ordinal) || AtLeast(c.Version, version));
 
     /// <summary>Numeric comparison of `X.Y.Z`; a pre-release counts as its version without the suffix.</summary>
     public static bool AtLeast(string version, string minimum)

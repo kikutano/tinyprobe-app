@@ -10,6 +10,7 @@
 - **Fields in the order of the file**: the params of an endpoint were shown with the required ones first (`password` above `username`); they keep the order of the API file, a required one marked with *.
 - **The `${…}` of a path and of step names are colored**, so the variables stand out from the rest of the path.
 - Needs tinyprobe 0.26.0 or newer for global variables; with an older one nothing of this is shown and calls work as before.
+- A tinyprobe given with `TINYPROBE_PATH` is judged by its version too, like the others: an older release no longer gets options it does not know. Only a development build (`0.0.0-dev`) is taken to have every feature.
 
 ## 0.4.15
 

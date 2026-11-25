@@ -1,6 +1,6 @@
 // A workflow and a sequence: the head, Run, the diagram and the list of steps.
 import { saveFile } from './editor.js';
-import { $, api, baseName, control, editing, flows, h, query, recall, remember, RestartError, runView, showMessage, slash, state, text } from '../base.js';
+import { $, api, baseName, control, editing, flows, h, query, recall, remember, RestartError, runView, showMessage, slash, state, text, withPlaceholders } from '../base.js';
 import { item, renderView, select } from '../render.js';
 import { clearSkips, runWorkflow, skippedSteps, toggleSkip } from '../runs.js';
 import { model } from '../start.js';
@@ -183,7 +183,7 @@ export function workflowView({ file }) {
       } },
       h('span', { class: `step-state ${run?.status ?? ''}`, title: isOff ? 'skipped in runs' : run?.status ?? 'not run yet' }, isOff && !result ? '⊘' : run ? icons[run.status] : ''),
       h('span', { class: 'step-number' }, step.index + 1),
-      h('span', { class: 'step-label' }, step.name,
+      h('span', { class: 'step-label' }, withPlaceholders(step.name),
         step.sequence ? h('span', { class: 'step-kind' }, `  · from ${step.sequence.name || baseName(step.sequence.file)}`) : null,
         step.for_each ? h('span', { class: 'step-kind' }, '  · for each item') : null,
         step.until ? h('span', { class: 'step-kind' }, '  · until') : null,
@@ -204,6 +204,10 @@ export function workflowView({ file }) {
       h('button', { type: 'button', class: 'button primary', onclick: () => runWorkflow(workflow) }, '▶ Run'),
       outcomeBadge(workflow.path),
       skipNote(workflow),
+      // By default a workflow starts from zero; this lets its runs read and save the global variables.
+      !state.info.globals ? null : h('label', { class: 'globals-switch', title: 'The runs of every workflow of this folder read the global variables, and keep those of the endpoints they call' },
+        h('input', { type: 'checkbox', checked: recall(`globals-runs:${state.root}`, false), onchange: event => remember(`globals-runs:${state.root}`, event.target.checked) }),
+        ' uses global variables'),
       h('span', { class: 'spacer' }),
       h('div', { class: 'segmented', role: 'group', 'aria-label': 'Show the steps as' },
         h('button', { type: 'button', class: `button small${mode === 'diagram' ? ' active' : ''}`, 'aria-pressed': String(mode === 'diagram'), onclick: () => toggle('diagram') }, 'Diagram'),
@@ -307,7 +311,7 @@ export function showStep(workflow, step, diagram, details) {
   const saves = Object.entries(step.save ?? {});
   details.replaceChildren(h('div', { class: 'panel' },
     h('div', { class: 'panel-head' },
-      h('span', { class: 'what' }, `${step.index + 1}. ${step.name}`),
+      h('span', { class: 'what' }, `${step.index + 1}. `, withPlaceholders(step.name)),
       h('span', { class: 'panel-actions' },
         editStepButton(workflow, step),
         ...stepActions(workflow, step),
@@ -343,6 +347,6 @@ export function sequenceView({ file }) {
     params.length > 0 ? h('div', { class: 'form' }, params.flatMap(p => [h('label', null, p.name, p.required ? h('span', { class: 'required' }, '*') : null), h('div', { class: 'aside' }, p.required ? 'required' : `default ${JSON.stringify(p.default)}`)])) : null,
     h('ol', { class: 'step-table' }, (sequence.inspect.steps ?? []).map(step => h('li', null,
       h('span', { class: 'step-number' }, step.index + 1),
-      h('span', { class: 'step-label' }, step.name),
+      h('span', { class: 'step-label' }, withPlaceholders(step.name)),
       h('span', { class: 'step-kind' }, step.type)))));
 }

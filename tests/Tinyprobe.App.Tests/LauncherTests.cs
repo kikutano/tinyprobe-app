@@ -362,6 +362,46 @@ public sealed class ApiTests : IDisposable
     }
 
     [Fact]
+    public async Task GlobalVariables_AreSetDeletedAndCleared_InTheFolder()
+    {
+        var cookie = await Session();
+        var file = Path.Combine(_folder, "globals.local.json");
+        File.WriteAllText(file, """{ "token": { "value": "abc", "from": "login", "at": "2026-11-25T10:00:00Z" }, "lang": "it" }""");
+
+        var read = await Send("GET", $"/api/globals?root={Root}", null, cookie);
+        var set = await Send("POST", "/api/globals", $$"""{"root":"{{RootJson}}","action":"set","name":"user_id","value":7,"from":"me"}""", cookie, Origin);
+        var replaced = await Send("POST", "/api/globals", $$"""{"root":"{{RootJson}}","action":"set","name":"token","value":"xyz"}""", cookie, Origin);
+        var deleted = await Send("POST", "/api/globals", $$"""{"root":"{{RootJson}}","action":"delete","name":"lang"}""", cookie, Origin);
+        using var after = JsonDocument.Parse(File.ReadAllText(file));
+        var cleared = await Send("POST", "/api/globals", $$"""{"root":"{{RootJson}}","action":"clear"}""", cookie, Origin);
+        var noName = await Send("POST", "/api/globals", $$"""{"root":"{{RootJson}}","action":"set"}""", cookie, Origin);
+
+        Assert.Equal(200, read.Status);
+        Assert.Contains("\"lang\": \"it\"", read.Body);
+        Assert.Equal((200, 200, 200), (set.Status, replaced.Status, deleted.Status));
+        // Set again in its place, by hand; a new one last, with the endpoint it came from; the other one gone.
+        Assert.Equal(["token", "user_id"], after.RootElement.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(("xyz", "by hand"), (after.RootElement.GetProperty("token").GetProperty("value").GetString(), after.RootElement.GetProperty("token").GetProperty("from").GetString()));
+        Assert.Equal((7, "me"), (after.RootElement.GetProperty("user_id").GetProperty("value").GetInt32(), after.RootElement.GetProperty("user_id").GetProperty("from").GetString()));
+        Assert.Equal(200, cleared.Status);
+        Assert.Equal("{}", File.ReadAllText(file).Trim());
+        Assert.Equal(400, noName.Status);
+    }
+
+    [Fact]
+    public async Task GlobalVariables_ReadNothingWhenTheFileIsMissing_AndSayWhenItIsNotJson()
+    {
+        var cookie = await Session();
+
+        var missing = await Send("GET", $"/api/globals?root={Root}", null, cookie);
+        File.WriteAllText(Path.Combine(_folder, "globals.local.json"), "[1, 2]");
+        var invalid = await Send("GET", $"/api/globals?root={Root}", null, cookie);
+
+        Assert.Equal((200, "{}"), (missing.Status, missing.Body));
+        Assert.Equal(422, invalid.Status);
+    }
+
+    [Fact]
     public async Task TheInstanceRoute_NeedsTheSecretOfInstanceJson()
     {
         Assert.Equal(403, (await Send("GET", "/internal/ticket")).Status);

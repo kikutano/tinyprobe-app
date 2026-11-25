@@ -23,6 +23,8 @@ internal sealed class TinyprobeCli(AppPaths paths)
     public const string Skipping = "0.24.0";
     /// <summary>`run --resume`, a run continued from the state of the last one (tinyprobe spec 0022).</summary>
     public const string Resuming = "0.25.0";
+    /// <summary>`--globals`, the global variables of single calls (tinyprobe spec 0023).</summary>
+    public const string Globals = "0.26.0";
 
     private const string Releases = "https://github.com/kikutano/tinyprobe/releases/latest/download";
 

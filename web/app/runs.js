@@ -2,6 +2,7 @@
 import { $, api, baseName, core, h, HISTORY_SIZE, recall, remember, requestHistory, RestartError, runView, showRestart, slash, state } from './base.js';
 import { ownerOf, renderSidebar, renderView, renderViewNow, renderViewSoon, showOwnResults } from './render.js';
 import { fillOutcome } from './views/workflow.js';
+import { afterCall, saveFromResponse, loadGlobals } from './globals.js';
 
 // --- Calls and runs --------------------------------------------------------------------------------------
 
@@ -66,7 +67,7 @@ export function stopped(view, exit, events) {
 
 export async function callEndpoint(file, endpoint, values) {
   const shown = Object.entries(values).map(([k, v]) => `${k}=${v}`).join(' ');
-  const { body, signal } = panel(`${endpoint.method} ${endpoint.name}${shown ? `  ${shown}` : ''}`);
+  const { node, body, signal } = panel(`${endpoint.method} ${endpoint.name}${shown ? `  ${shown}` : ''}`);
   const view = runView.create(body);
   view.reset(endpoint.name, state.environment, { call: true });
   const events = [];
@@ -82,6 +83,14 @@ export async function callEndpoint(file, endpoint, values) {
     if (e.name !== 'AbortError' && !(e instanceof RestartError)) view.error(e.message);
   }
   await record(root, { file, endpoint: endpoint.name, args: Object.entries(values), environment, events, time: Date.now() });
+  // Global variables: what the call saved, and saving a value of a 2xx JSON response from here.
+  if (root !== state.root) return;
+  await afterCall(endpoint.name, events);
+  const response = events.find(e => e.event === 'step_completed')?.response;
+  if (response && response.status >= 200 && response.status < 300 && response.body) {
+    const bar = saveFromResponse(file, endpoint, response.body);
+    if (bar) node.append(bar);
+  }
 }
 
 /** A call that sent a request goes into the folder's history; one stopped by invalid arguments does not. */
@@ -96,7 +105,7 @@ export async function record(root, call) {
 
 // --- Steps turned off in runs ----------------------------------------------------------------------------
 //
-// tinyprobe run --skip (spec 0021): the file does not change, the page keeps the switches per folder and
+// tinyprobe run --skip (spec 0021): the file does not change, the page saves the switches per folder and
 // workflow, by the step's index and name, until they are turned back on. A step whose name changed at that
 // index is no longer turned off: the page never skips a step the user did not choose.
 
@@ -110,13 +119,13 @@ export function skippedSteps(workflow) {
   const all = skipStore();
   const saved = all[workflow.path] ?? [];
   const steps = workflow.inspect.steps ?? [];
-  const kept = saved.filter(s => steps[s.index]?.name === s.name);
-  if (kept.length !== saved.length) {
-    if (kept.length) all[workflow.path] = kept;
+  const saved = saved.filter(s => steps[s.index]?.name === s.name);
+  if (saved.length !== saved.length) {
+    if (saved.length) all[workflow.path] = saved;
     else delete all[workflow.path];
     remember(`skips:${state.root}`, all);
   }
-  return kept.map(s => s.index).sort((a, b) => a - b);
+  return saved.map(s => s.index).sort((a, b) => a - b);
 }
 
 /** Turns a step off in runs, or on again; false when it would leave no step to run. */
@@ -141,7 +150,7 @@ export function clearSkips(workflow) {
 }
 
 // ▶ Up to here continues from where the last run stopped (tinyprobe `run --resume`, spec 0022). The state of
-// that run holds tokens, so it is kept only here, in the page's memory, never in the browser's storage: closing
+// that run holds tokens, so it is saved only here, in the page's memory, never in the browser's storage: closing
 // or reloading the page forgets it, and the next ▶ Up to here runs from the start.
 const resumable = new Map();
 
@@ -198,7 +207,7 @@ export async function runWorkflow(workflow, to, { fromStart = false, note = '' }
   state.runs.set(workflow.path, recorded);
   const environment = state.environment;
   try {
-    const payload = { root: state.root, files: [workflow.path], to: to ?? null, skip, env: environment };
+    const payload = { root: state.root, files: [workflow.path], to: to ?? null, skip, env: environment, globals: recall(`globals-runs:${state.root}`, false) };
     if (why === null) payload.resume = last.state;
     let exit = await stream('/api/run', payload, event => {
       events++;
@@ -232,10 +241,15 @@ export async function runWorkflow(workflow, to, { fromStart = false, note = '' }
   } catch (e) {
     if (e.name !== 'AbortError' && !(e instanceof RestartError)) view.error(e.message);
   }
+  // A run that shares the global variables may have saved some.
+  if (recall(`globals-runs:${state.root}`, false)) {
+    await loadGlobals();
+    renderSidebar();
+  }
 }
 
 /**
- * The last run of a workflow, for the sidebar and the overview: kept per folder in the browser, so it is still
+ * The last run of a workflow, for the sidebar and the overview: saved per folder in the browser, so it is still
  * there when the app is opened again. A run up to a step (▶ Up to here) counts too, with `to` (1-based): a step
  * that failed in it is the state of the workflow now. `before` is the outcome of the run a continued run goes on
  * from, whose steps it adds.

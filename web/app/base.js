@@ -20,7 +20,11 @@ export const state = {
   selection: { kind: 'home' },
   outcomes: new Map(),
   variables: [],
+  // The values of the environment's variables, by name, to show them in the fields that override them.
+  variableValues: new Map(),
   history: [],
+  // The global variables of the folder (globals.local.json, tinyprobe spec 0023), { name: { value, from, at } }.
+  globals: {},
   // The events of the last run of each workflow, to light its diagram up again; the diagram on screen.
   runs: new Map(),
   // The result panel of the last run of each workflow, where a click on the diagram shows a step.
@@ -48,6 +52,20 @@ export function h(tag, attributes, ...children) {
 }
 
 export const $ = id => document.getElementById(id);
+
+/** A text with its ${…} placeholders in their own color, so the variables stand out: text nodes and spans. */
+export function withPlaceholders(value) {
+  const text = String(value ?? '');
+  const parts = [];
+  let last = 0;
+  for (const match of text.matchAll(/\$\{[^}]*\}/g)) {
+    if (match.index > last) parts.push(text.slice(last, match.index));
+    parts.push(h('span', { class: 'placeholder' }, match[0]));
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
+}
 
 /** The children worth adding: replaceChildren would write a null as the text "null". */
 export const nodes = (...children) => children.flat().filter(child => child !== null && child !== undefined && child !== false);

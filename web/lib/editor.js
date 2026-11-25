@@ -119,7 +119,10 @@
       query: (endpoint.query ?? []).join(', '),
       headers: Object.entries(endpoint.headers ?? {}).map(([n, v]) => ({ name: n, value: display(v) })),
       body: endpoint.body === undefined ? '' : JSON.stringify(endpoint.body, null, 2),
-      defaults: Object.entries(endpoint.params ?? {}).map(([n, v]) => ({ name: n, value: display(v) }))
+      defaults: Object.entries(endpoint.params ?? {}).map(([n, v]) => ({ name: n, value: display(v) })),
+      // Global variables, only when the endpoint has some: a cookie source ({ cookie: name }) is
+      // shown as its JSON, kept as written.
+      ...(endpoint.globals ? { globals: Object.entries(endpoint.globals).map(([n, v]) => ({ name: n, path: typeof v === 'string' ? v : JSON.stringify(v) })) } : {})
     };
   }
 

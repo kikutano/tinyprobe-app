@@ -3,6 +3,7 @@ import { $, api, baseName, h, recall, remember, RestartError, showMessage, state
 import { authView, endpointEditView, yamlView } from './views/editor.js';
 import { endpointView } from './views/endpoint.js';
 import { environmentView } from './views/environment.js';
+import { globalsView } from './globals.js';
 import { historyView } from './views/history.js';
 import { homeView, installView, welcomeView } from './views/home.js';
 import { newRequestView } from './views/request.js';
@@ -84,7 +85,9 @@ export function renderSidebar() {
   groups.push(h('div', { class: 'group' }, h('ul', { class: 'tree' },
     h('li', null, item({ label: 'Overview', mark: '⌂', selected: selected.kind === 'home', onclick: () => select({ kind: 'home' }) })),
     h('li', null, item({ mark: '⚙', label: state.environment ? `Environment: ${baseName(state.environment)}` : 'Environment', selected: selected.kind === 'environment', onclick: () => select({ kind: 'environment' }) })),
-    h('li', null, item({ mark: '↺', label: state.history.length > 0 ? `History (${state.history.length})` : 'History', selected: selected.kind === 'history', onclick: () => select({ kind: 'history' }) })))));
+    h('li', null, item({ mark: '↺', label: state.history.length > 0 ? `History (${state.history.length})` : 'History', selected: selected.kind === 'history', onclick: () => select({ kind: 'history' }) })),
+    // The global variables saved by single calls, with a tinyprobe that has them.
+    !state.info.globals ? null : h('li', null, item({ mark: '◆', label: Object.keys(state.globals).length > 0 ? `Global variables (${Object.keys(state.globals).length})` : 'Global variables', selected: selected.kind === 'globals', onclick: () => select({ kind: 'globals' }) })))));
 
   const endpointCount = m.apis.reduce((sum, file) => sum + file.endpoints.length, 0);
   const apiOpen = isOpen('api', true);
@@ -247,6 +250,7 @@ export function renderView() {
     s.kind === 'edit-step' ? stepEditView(s) :
     s.kind === 'new-workflow' ? newWorkflowView() :
     s.kind === 'history' ? historyView() :
+    s.kind === 'globals' ? globalsView() :
     homeView();
   view.replaceChildren(content ?? homeView());
   showOwnResults();

@@ -47,7 +47,7 @@ export function endpointView({ file, name }) {
     ];
   };
 
-  // The values are saved as they are typed, not only when sent: the view is drawn again when the window comes back
+  // The values are kept as they are typed, not only when sent: the view is drawn again when the window comes back
   // to the front (the folder may have changed) or when another endpoint is opened and this one again.
   const typed = () => Object.fromEntries([...inputs].filter(([, { input }]) => input.value !== '').map(([argument, { input }]) => [argument, input.value]));
   const send = h('button', { type: 'submit', class: 'button primary' }, '▶ Send');

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.17
+
+- **The app opens again**: 0.4.16 showed an empty page after its top bar, because one of the page's modules did not load (a name declared twice, `SyntaxError` in the browser's console). A test now checks that every module of the page is valid JavaScript, which the other tests, reading the modules as text, could not see.
+
 ## 0.4.16
 
 - **Global variables: log in once, then call what needs the token.** An endpoint can save values of its response for the next calls (tinyprobe's `globals`, spec 0023): `login` saves `token` from `$.access_token`, and `me`, which sends `Authorization: Bearer ${token}`, works on its own, no workflow needed. On an endpoint, a box shows what it **saves** (`token: from $.access_token of the response`, with the value saved now) and what it **uses** (`token: saved from login endpoint · 10:12`); a variable with a value has a green check, one not saved yet a grey circle and **▶ Call login**, which sends the endpoint that saves it with the values last typed in its form. A line flashes green when ▶ Send saves it.

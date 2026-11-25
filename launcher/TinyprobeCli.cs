@@ -67,6 +67,14 @@ internal sealed class TinyprobeCli(AppPaths paths)
         }
     }
 
+    /// <summary>
+    /// Whether the tinyprobe in use has a feature that came in <paramref name="version"/>. A development build
+    /// (`0.0.0-dev`, from TINYPROBE_PATH) has them all; any other binary is judged by its version, also one given
+    /// with TINYPROBE_PATH (CI passes the latest release that way, which may come before a feature).
+    /// </summary>
+    public static bool Has(CliInfo? cli, string version) =>
+        cli is { } c && (c.Version.StartsWith("0.0.0", StringComparison.Ordinal) || AtLeast(c.Version, version));
+
     /// <summary>Numeric comparison of `X.Y.Z`; a pre-release counts as its version without the suffix.</summary>
     public static bool AtLeast(string version, string minimum)
     {

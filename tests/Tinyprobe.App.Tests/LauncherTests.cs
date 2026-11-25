@@ -148,6 +148,18 @@ public sealed class TinyprobeCliTests
     [InlineData("0.20", true)]
     public void Versions_AreComparedAsNumbers(string version, bool expected) =>
         Assert.Equal(expected, TinyprobeCli.AtLeast(version, "0.20.0"));
+
+    [Theory]
+    [InlineData("0.26.0", "env", true)]
+    [InlineData("0.25.0", "env", false)]          // the latest release given by TINYPROBE_PATH, before the feature
+    [InlineData("0.0.0-dev", "env", true)]        // a development build has every feature
+    [InlineData("0.25.0", "path", false)]
+    [InlineData("0.27.1", "app", true)]
+    public void AFeature_IsThereFromItsVersion_OrInADevelopmentBuild(string version, string source, bool expected) =>
+        Assert.Equal(expected, TinyprobeCli.Has(new CliInfo("/bin/tinyprobe", version, source), TinyprobeCli.Globals));
+
+    [Fact]
+    public void NoTinyprobe_HasNoFeature() => Assert.False(TinyprobeCli.Has(null, TinyprobeCli.Globals));
 }
 
 /// <summary>The launcher's guards, against a real server on a free port.</summary>

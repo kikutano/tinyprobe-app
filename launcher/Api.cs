@@ -196,11 +196,11 @@ internal sealed class Api
         }
         w.WriteString("problem", _cli.Problem);
         // The visual editor reads files with `inspect --source`, from tinyprobe 0.21.0 (spec 0018).
-        w.WriteBoolean("editing", _cli.Current is { } editor && (editor.Source == "env" || TinyprobeCli.AtLeast(editor.Version, TinyprobeCli.Editing)));
+        w.WriteBoolean("editing", TinyprobeCli.Has(_cli.Current, TinyprobeCli.Editing));
         // Steps turned off in runs are passed with `run --skip`, from tinyprobe 0.24.0 (spec 0021).
-        w.WriteBoolean("skipping", _cli.Current is { } skipper && (skipper.Source == "env" || TinyprobeCli.AtLeast(skipper.Version, TinyprobeCli.Skipping)));
+        w.WriteBoolean("skipping", TinyprobeCli.Has(_cli.Current, TinyprobeCli.Skipping));
         // ▶ Up to here continues the last run with `run --resume`, from tinyprobe 0.25.0 (spec 0022).
-        w.WriteBoolean("resuming", _cli.Current is { } resumer && (resumer.Source == "env" || TinyprobeCli.AtLeast(resumer.Version, TinyprobeCli.Resuming)));
+        w.WriteBoolean("resuming", TinyprobeCli.Has(_cli.Current, TinyprobeCli.Resuming));
         // Single calls read and save global variables with `--globals`, from tinyprobe 0.26.0 (spec 0023).
         w.WriteBoolean("globals", SupportsGlobals);
         w.WriteString("icon", Desktop.CanAddIcon ? _config.Shortcut : "unsupported");
@@ -769,7 +769,7 @@ internal sealed class Api
 
     private const string GlobalsFileName = "globals.local.json";
 
-    private bool SupportsGlobals => _cli.Current is { } cli && (cli.Source == "env" || TinyprobeCli.AtLeast(cli.Version, TinyprobeCli.Globals));
+    private bool SupportsGlobals => TinyprobeCli.Has(_cli.Current, TinyprobeCli.Globals);
 
     private async Task ReadGlobals(HttpRequest request, HttpResponse response)
     {

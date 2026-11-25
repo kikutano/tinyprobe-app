@@ -105,7 +105,7 @@ export async function record(root, call) {
 
 // --- Steps turned off in runs ----------------------------------------------------------------------------
 //
-// tinyprobe run --skip (spec 0021): the file does not change, the page saves the switches per folder and
+// tinyprobe run --skip (spec 0021): the file does not change, the page keeps the switches per folder and
 // workflow, by the step's index and name, until they are turned back on. A step whose name changed at that
 // index is no longer turned off: the page never skips a step the user did not choose.
 
@@ -119,13 +119,13 @@ export function skippedSteps(workflow) {
   const all = skipStore();
   const saved = all[workflow.path] ?? [];
   const steps = workflow.inspect.steps ?? [];
-  const saved = saved.filter(s => steps[s.index]?.name === s.name);
-  if (saved.length !== saved.length) {
-    if (saved.length) all[workflow.path] = saved;
+  const kept = saved.filter(s => steps[s.index]?.name === s.name);
+  if (kept.length !== saved.length) {
+    if (kept.length) all[workflow.path] = kept;
     else delete all[workflow.path];
     remember(`skips:${state.root}`, all);
   }
-  return saved.map(s => s.index).sort((a, b) => a - b);
+  return kept.map(s => s.index).sort((a, b) => a - b);
 }
 
 /** Turns a step off in runs, or on again; false when it would leave no step to run. */
@@ -150,7 +150,7 @@ export function clearSkips(workflow) {
 }
 
 // ▶ Up to here continues from where the last run stopped (tinyprobe `run --resume`, spec 0022). The state of
-// that run holds tokens, so it is saved only here, in the page's memory, never in the browser's storage: closing
+// that run holds tokens, so it is kept only here, in the page's memory, never in the browser's storage: closing
 // or reloading the page forgets it, and the next ▶ Up to here runs from the start.
 const resumable = new Map();
 
@@ -249,7 +249,7 @@ export async function runWorkflow(workflow, to, { fromStart = false, note = '' }
 }
 
 /**
- * The last run of a workflow, for the sidebar and the overview: saved per folder in the browser, so it is still
+ * The last run of a workflow, for the sidebar and the overview: kept per folder in the browser, so it is still
  * there when the app is opened again. A run up to a step (▶ Up to here) counts too, with `to` (1-based): a step
  * that failed in it is the state of the workflow now. `before` is the outcome of the run a continued run goes on
  * from, whose steps it adds.

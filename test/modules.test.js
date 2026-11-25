@@ -67,6 +67,21 @@ const modules = files.map(file => {
   };
 });
 
+test('every module of the page is valid JavaScript', () => {
+  // The browser loads them as they are: one syntax error (a name declared twice) and the page stays empty,
+  // which no other test sees, since they read the modules as text. node --check parses without running.
+  const { execFileSync } = require('node:child_process');
+  const broken = [];
+  for (const file of files) {
+    try {
+      execFileSync(process.execPath, ['--check', file], { stdio: 'pipe' });
+    } catch (e) {
+      broken.push(`${path.relative(root, file)}: ${String(e.stderr).split('\n').find(line => /Error/.test(line)) ?? e.message}`);
+    }
+  }
+  assert.deepEqual(broken, []);
+});
+
 test('every name a module uses from another module is imported', () => {
   // Every top-level name of another module, exported or not: a name left out of the exports is the same mistake.
   const exportedBy = new Map();

@@ -1,8 +1,8 @@
 // An endpoint: its form, sent with tinyprobe call.
-import { api, baseName, envFile, h, recall, remember, showMessage, state, withPlaceholders } from '../base.js';
+import { api, baseName, envFile, h, nodes, recall, remember, showMessage, state, withPlaceholders } from '../base.js';
 import { select } from '../render.js';
 import { callEndpoint } from '../runs.js';
-import { endpointGlobals, savers } from '../globals.js';
+import { describeAuthSet, endpointGlobals, savers, whereFrom, writtenFile } from '../globals.js';
 import { deleteBlock } from './editor.js';
 
 // --- An endpoint -----------------------------------------------------------------------------------------
@@ -95,8 +95,34 @@ export function endpointView({ file, name }) {
         h('button', { type: 'button', class: 'button small', onclick: () => deleteBlock(file, 'endpoint', name, `the endpoint ${name}`, () => select({ kind: 'home' })) }, 'Delete')) : null),
     h('div', { class: 'where' }, `${file}:${endpoint.location?.line ?? ''}`),
     h('div', { class: 'path' }, withPlaceholders(`${endpoint.base_url ?? ''}${endpoint.path}`)),
+    authLine(file, endpoint),
     endpointGlobals(file, endpoint, globalArgs, sendFromElsewhere),
     form);
+}
+
+/**
+ * Under the path: the auth set of the endpoint, what it sends and where its ${…} come from ("Auth: bearer · sends
+ * Authorization: Bearer ${token} · token: global variable, saved by login"). The name alone says nothing of what a
+ * set holds. Filled in once the file as written is read; nothing for an endpoint without an auth set.
+ */
+function authLine(file, endpoint) {
+  if (!state.info.editing) return null;
+  const node = h('div', { class: 'auth-line', hidden: true });
+  writtenFile(file).then(source => {
+    const written = source.inspect?.source;
+    const local = endpoint.import_name ? endpoint.name.slice(endpoint.import_name.length + 1) : endpoint.name;
+    const sets = [written?.endpoints?.[local]?.auth ?? []].flat().filter(Boolean);
+    if (sets.length === 0) return;
+    const sends = sets.map(set => describeAuthSet(written?.auth?.[set])).filter(Boolean).join(', ');
+    const names = [...new Set([...sends.matchAll(/\$\{([^}$]+)\}/g)].map(m => m[1]))];
+    // replaceChildren takes nodes one by one: nodes() flattens the list and drops the empty ones.
+    node.replaceChildren(...nodes(
+      h('span', { class: 'auth-label' }, 'Auth'), h('strong', null, sets.join(', ')),
+      sends ? [' · sends ', ...withPlaceholders(sends)] : null,
+      names.length > 0 ? h('div', { class: 'auth-origins' }, names.map(whereFrom).join(' · ')) : null));
+    node.hidden = false;
+  }).catch(() => {});
+  return node;
 }
 
 /**

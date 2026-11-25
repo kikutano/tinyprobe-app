@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.18
+
+- **Where an endpoint uses a global variable**: the Uses line says where the endpoint writes it, `token: in the Authorization header (auth set bearer) · saved from login endpoint`, also in the path, the body, a form or Basic and OAuth2 auth.
+- **Use a global variable from an endpoint that does not use one yet**: its Uses says "none yet" and how (write `${token}` in its path, headers, body or auth set), and **Use token as Bearer token** does it for a token: the endpoint picks the auth set that sends `Authorization: Bearer ${token}` when the file has one, or gets that header itself. tinyprobe checks the file before it is kept.
+- **What an auth set sends**: under the path of an endpoint, `Auth bearer · sends Authorization: Bearer ${token}` and where each value comes from (`token: global variable, saved by login`, or the environment, or the call). In the form of an endpoint, the Auth menu shows what each set sends (`bearer — Authorization: Bearer ${token}`, `apikey — X-API-Key: ${apiKey}`) and the line under it where its values come from. The name of a set alone said nothing of what it holds.
+- **Save a value as a global variable** is now a button in the color of ▶ Send, without the dots: it was hard to see.
+
 ## 0.4.17
 
 - **The app opens again**: 0.4.16 showed an empty page after its top bar, because one of the page's modules did not load (a name declared twice, `SyntaxError` in the browser's console). A test now checks that every module of the page is valid JavaScript, which the other tests, reading the modules as text, could not see.
